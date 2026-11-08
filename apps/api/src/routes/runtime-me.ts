@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
+import { sql } from "kysely";
 import { AppError, CLIENT_EVENT_TYPES, CompetitionConfigSchema, remainingAttempts } from "@cos/core";
+import { resultsVisibleNow } from "./catalog.ts";
 import { ANONYMOUS, withContext, type Attempt, type DbContext } from "@cos/db";
 import { requireAuth, type AuthInfo } from "../lib/auth.ts";
 import {
@@ -223,5 +225,35 @@ export async function meRuntimeRoutes(app: FastifyInstance): Promise<void> {
     return {
       attempts: rows.map((a) => ({ id: a.id, competitionId: a.competition_id, roundId: a.round_id, groupId: a.group_id, studentId: a.student_id, kind: a.kind, status: a.status, attemptNumber: a.attempt_number, startedAt: a.started_at, submittedAt: a.submitted_at, submitReason: a.submit_reason })),
     };
+  });
+
+  /** My (or my children's) official results: published versions only, following the competition's publication setting. */
+  app.get("/results", async (request) => {
+    const auth = requireAuth(request);
+    const { studentId } = parse(z.object({ studentId: zUuid.optional() }), request.query);
+    return withContext(db, personal(auth), async (tx) => {
+      let q = tx.selectFrom("result_entries").selectAll();
+      if (studentId) q = q.where("student_id", "=", studentId);
+      const entries = await q.execute();
+      const out = [];
+      for (const e of entries) {
+        const { rows } = await sql<{ round_id: string; group_id: string; competition_id: string; status: string; version_number: number; published_at: Date }>`select * from app.result_version_public(${e.result_version_id})`.execute(tx);
+        const v = rows[0];
+        if (!v || v.status !== "published") continue;
+        const comp = await tx
+          .selectFrom("competitions as c")
+          .innerJoin("competition_versions as cv", "cv.id", "c.current_version_id")
+          .select(["c.name", "c.results_publication", "cv.config"])
+          .where("c.id", "=", v.competition_id)
+          .executeTakeFirst();
+        if (!comp || !resultsVisibleNow(comp.results_publication, CompetitionConfigSchema.parse(comp.config))) continue;
+        out.push({
+          competitionId: v.competition_id, competitionName: comp.name, roundId: v.round_id, groupId: v.group_id, versionNumber: v.version_number, publishedAt: v.published_at,
+          studentId: e.student_id, status: e.status, totalScore: e.total_score === null ? null : Number(e.total_score), rank: e.rank, tied: (e.tied_with ?? 1) > 1, qualified: e.qualified,
+          scopeRanks: e.scope_ranks,
+        });
+      }
+      return { results: out };
+    });
   });
 }

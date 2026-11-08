@@ -39,6 +39,7 @@ export const PERMISSIONS = [
   "review.approve",
   "result.override",
   "integrity.disqualify",
+  "emergency.override",
   "ranking.read",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
@@ -49,7 +50,7 @@ export type Permission = (typeof PERMISSIONS)[number];
  * who must act can grant themselves Head Judge in a tenant; that grant is
  * audited like any other.
  */
-export const HEAD_JUDGE_ONLY: readonly Permission[] = ["result.override", "integrity.disqualify"];
+export const HEAD_JUDGE_ONLY: readonly Permission[] = ["review.approve", "result.override", "integrity.disqualify", "emergency.override"];
 
 export const TENANT_ROLE_PERMISSIONS: Record<TenantRole, readonly Permission[]> = {
   competition_admin: [
@@ -85,6 +86,7 @@ export const TENANT_ROLE_PERMISSIONS: Record<TenantRole, readonly Permission[]> 
     "review.approve",
     "result.override",
     "integrity.disqualify",
+    "emergency.override",
     "ranking.read",
     "certificates.approve",
     "analytics.read",
@@ -129,6 +131,7 @@ export const COMPETITION_SCOPED_PERMISSIONS: readonly Permission[] = [
   "review.approve",
   "result.override",
   "integrity.disqualify",
+  "emergency.override",
   "ranking.read",
 ];
 

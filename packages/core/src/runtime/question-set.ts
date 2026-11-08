@@ -36,17 +36,33 @@ const OPTION_TYPES = new Set<QuestionType>(["single_choice", "multiple_choice", 
  *   random_from_pool: N items drawn from the matching pool per participant
  * Question order and option order are shuffled when the round-group asks for it.
  */
-export function buildQuestionSet(pool: readonly PoolItem[], rg: Pick<RoundGroupConfig, "questionFormats" | "questionCount" | "content" | "randomizeQuestions" | "randomizeOptions">, seedText: string): QuestionRef[] {
+export interface QuestionSetOptions {
+  /** Items never given (disabled or replaced by an emergency action). */
+  exclude?: ReadonlySet<string>;
+  /** Items always included (replacements), taking places from the rest. */
+  require?: readonly string[];
+}
+
+export function buildQuestionSet(
+  pool: readonly PoolItem[],
+  rg: Pick<RoundGroupConfig, "questionFormats" | "questionCount" | "content" | "randomizeQuestions" | "randomizeOptions">,
+  seedText: string,
+  options: QuestionSetOptions = {},
+): QuestionRef[] {
   const random = rng(seedFrom(seedText));
-  const matching = matchingItems(pool, rg.questionFormats, rg.content.filters) as PoolItem[];
-  const sorted = [...matching].sort((a, b) => a.externalKey.localeCompare(b.externalKey));
-  const count = Math.min(rg.questionCount ?? sorted.length, sorted.length);
-  let chosen = rg.content.selection === "random_from_pool" ? shuffle(sorted, random).slice(0, count) : sorted.slice(0, count);
-  if (rg.content.selection === "random_from_pool" && !rg.randomizeQuestions) {
-    chosen = chosen.sort((a, b) => a.externalKey.localeCompare(b.externalKey));
-  } else if (rg.randomizeQuestions) {
-    chosen = shuffle(chosen, random);
-  }
+  const required = new Set(options.require ?? []);
+  const available = pool.filter((p) => !options.exclude?.has(p.itemId) || required.has(p.itemId));
+  const matching = matchingItems(available, rg.questionFormats, rg.content.filters) as PoolItem[];
+  const forced = available.filter((p) => required.has(p.itemId)).sort((a, b) => a.externalKey.localeCompare(b.externalKey));
+  const sorted = [...matching].filter((p) => !required.has(p.itemId)).sort((a, b) => a.externalKey.localeCompare(b.externalKey));
+  const count = Math.min(rg.questionCount ?? sorted.length + forced.length, sorted.length + forced.length);
+  const rest = count - Math.min(forced.length, count);
+  let chosen = [
+    ...forced.slice(0, count),
+    ...(rg.content.selection === "random_from_pool" ? shuffle(sorted, random).slice(0, rest) : sorted.slice(0, rest)),
+  ];
+  if (!rg.randomizeQuestions) chosen = chosen.sort((a, b) => a.externalKey.localeCompare(b.externalKey));
+  if (rg.randomizeQuestions) chosen = shuffle(chosen, random);
   return chosen.map((p) => {
     const body = p.item.body as Record<string, unknown>;
     const order: Record<string, string[]> = {};

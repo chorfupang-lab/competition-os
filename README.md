@@ -10,7 +10,7 @@ payments, judging, certificates and student Learning Passports.
 
 ## Status
 
-**Stages 1–5 of 11 are complete.**
+**Stages 1–6 of 11 are complete.**
 - Stage 1, product foundation: database, login, tenants, roles and
   permissions, tenant isolation, schools and rosters, parents and children,
   and the audit log.
@@ -32,6 +32,12 @@ payments, judging, certificates and student Learning Passports.
   session control, browser and server integrity signals, risk scoring and
   flagged cases, auto-submit, and a background worker. See
   [docs/runtime.md](docs/runtime.md).
+- Stage 6, judging and results: integrity review (Head Judge-only
+  disqualification), manual grading, Head Judge emergency actions with
+  re-scoring, versioned official results (draft → judge review → Head Judge
+  approval → published, with before/after diffs and overrides), qualification
+  gating the next round, and privacy-aware leaderboards. See
+  [docs/results.md](docs/results.md).
 
 This is a backend API only; the web portals come later. See the roadmap for
 what each stage adds.
@@ -141,3 +147,11 @@ that change data, the `Origin` must be in `ALLOWED_ORIGINS`.
 | `POST /me/attempts`, `GET /me/attempts/:id` | student / parent | Start or resume (device + session); full state |
 | `PUT /me/attempts/:id/answers`, `POST .../heartbeat`, `.../events`, `.../resume`, `.../submit` | student / parent | Autosave, keep-alive, integrity signals, resume after pause, submit |
 | `GET /t/:tenantId/competitions/:id/attempts`, `GET /t/:tenantId/attempts/:attemptId` | Judge / Competition Admin | Attempts with risk; full review view (questions as shown, answers, grades, sessions, signals) |
+| `GET .../competitions/:id/risk-cases`, `GET /t/:tenantId/risk-cases/:id`, `POST .../reviews`, `POST .../decision` | Judge (disqualify: Head Judge) | Integrity review |
+| `POST /t/:tenantId/attempts/:id/risk-case`, `POST .../grades` | Judge (re-grade: Head Judge) | Open a case; grade pending questions |
+| `POST/GET .../competitions/:id/results`, `GET /t/:tenantId/results/:vid` | Competition Admin, Judges | Compute a draft (overrides: Head Judge); versions; entries |
+| `POST /t/:tenantId/results/:vid/submit`, `/reviews`, `/approve`, `/discard` | see docs/results.md | Review workflow; approval publishes (Head Judge) |
+| `POST .../competitions/:id/emergency/extend-time`, `reopen-attempt`, `invalidate-attempt`, `makeup-attempt`, `questions`, `cancel-round`; `GET .../emergency` | Head Judge | Emergency actions and their log |
+| `PATCH .../competitions/:id/results-settings` | Competition Admin | Publication mode, leaderboard privacy, live board |
+| `GET /competitions/:id/leaderboard?roundId&groupId` | anyone | Public leaderboard (official or provisional) |
+| `GET /me/results` | parent / student | Own published results |

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { sql } from "kysely";
 import { z } from "zod";
-import { AppError, publicConfigView, type CompetitionConfig } from "@cos/core";
+import { AppError, CompetitionConfigSchema, displayName, publicConfigView, type CompetitionConfig, type LeaderboardPrivacy } from "@cos/core";
 import { ANONYMOUS, withContext, type Tx } from "@cos/db";
 import { parse, zUuid } from "../lib/validation.ts";
 
@@ -50,6 +50,52 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     const organizers = await withContext(db, ANONYMOUS, (tx) => organizerProfiles(tx, [row.tenant_id]));
     return { competition: present(row, organizers.get(row.tenant_id) ?? null) };
   });
+
+  /**
+   * Public leaderboard for one round × group, from PUBLISHED results only
+   * (or a provisional live board when the organizer enables it). Names follow
+   * the competition's privacy mode; the platform Student ID is never shown.
+   */
+  app.get("/:competitionId/leaderboard", async (request) => {
+    const { competitionId } = parse(z.object({ competitionId: zUuid }), request.params);
+    const q = parse(z.object({ roundId: zUuid, groupId: zUuid }), request.query);
+    return withContext(db, ANONYMOUS, async (tx) => {
+      const comp = await tx
+        .selectFrom("competitions as c")
+        .innerJoin("competition_versions as v", "v.id", "c.current_version_id")
+        .select(["c.id", "v.config"])
+        .where("c.id", "=", competitionId)
+        .where("c.status", "=", "published")
+        .executeTakeFirst();
+      if (!comp) throw new AppError("NOT_FOUND");
+      const config = CompetitionConfigSchema.parse(comp.config);
+      const { rows } = await sql<{ version_id: string; version_number: number; published_at: Date; publication: string; privacy: LeaderboardPrivacy; registration_id: string; student_id: string; status: string; total_score: string | null; rank: number | null; tied_with: number | null; qualified: boolean; given_name: string | null; family_name: string | null; preferred_name: string | null; nickname: string | null }>`
+        select * from app.public_results(${competitionId}, ${q.roundId}, ${q.groupId})`.execute(tx);
+      const entry = (r: { student_id: string; rank: number | null; tied_with: number | null; total_score: string | null; status: string; given_name: string | null; family_name: string | null; preferred_name: string | null; nickname: string | null }, privacy: LeaderboardPrivacy) => ({
+        rank: r.rank,
+        tied: (r.tied_with ?? 1) > 1,
+        name: displayName(privacy, { competitionId, studentId: r.student_id, givenName: r.given_name, familyName: r.family_name, preferredName: r.preferred_name, nickname: r.nickname }),
+        totalScore: r.total_score === null ? null : Number(r.total_score),
+      });
+      const ranked = <T extends { rank: number | null; status: string }>(list: T[]) => list.filter((r) => r.rank !== null && r.status === "ok").sort((a, b) => a.rank! - b.rank!);
+      if (rows.length && resultsVisibleNow(rows[0]!.publication, config)) {
+        return { official: true, versionNumber: rows[0]!.version_number, publishedAt: rows[0]!.published_at, entries: ranked(rows).map((r) => ({ ...entry(r, r.privacy), qualified: r.qualified })) };
+      }
+      const live = await sql<{ version_number: number; created_at: Date; privacy: LeaderboardPrivacy; student_id: string; status: string; total_score: string | null; rank: number | null; tied_with: number | null; given_name: string | null; family_name: string | null; preferred_name: string | null; nickname: string | null }>`
+        select * from app.public_live_results(${competitionId}, ${q.roundId}, ${q.groupId})`.execute(tx);
+      if (live.rows.length) {
+        return { official: false, provisional: true, computedAt: live.rows[0]!.created_at, entries: ranked(live.rows).map((r) => entry(r, r.privacy)) };
+      }
+      throw new AppError("NOT_FOUND", { reason: "no_published_results" });
+    });
+  });
+}
+
+/** When approved results become public: on approval, or once the last round has closed. */
+export function resultsVisibleNow(publication: string, config: CompetitionConfig, now = Date.now()): boolean {
+  if (publication === "never") return false;
+  if (publication === "after_competition_ends") return now >= Math.max(...config.rounds.map((r) => Date.parse(r.closesAt)));
+  return true;
 }
 
 async function organizerProfiles(tx: Tx, tenantIds: string[]) {

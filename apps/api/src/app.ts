@@ -16,6 +16,8 @@ import { meRegistrationRoutes } from "./routes/registrations-me.ts";
 import { webhookRoutes } from "./routes/webhooks.ts";
 import { adminRuntimeRoutes } from "./routes/runtime-admin.ts";
 import { meRuntimeRoutes } from "./routes/runtime-me.ts";
+import { emergencyRoutes } from "./routes/emergency.ts";
+import { judgingRoutes } from "./routes/judging.ts";
 import { createProviders, type PaymentProviders } from "./payments/index.ts";
 import { meRoutes } from "./routes/me.ts";
 import { platformRoutes } from "./routes/platform.ts";
@@ -115,6 +117,8 @@ export async function buildApp(input: Omit<AppDeps, "providers"> & { providers?:
   await app.register(meRegistrationRoutes, { prefix: "/me" });
   await app.register(meRuntimeRoutes, { prefix: "/me" });
   await app.register(adminRuntimeRoutes, { prefix: "/t/:tenantId" });
+  await app.register(judgingRoutes, { prefix: "/t/:tenantId" });
+  await app.register(emergencyRoutes, { prefix: "/t/:tenantId/competitions/:competitionId/emergency" });
   await app.register(webhookRoutes, { prefix: "/webhooks" });
   await app.register(catalogRoutes, { prefix: "/competitions" });
   return app;

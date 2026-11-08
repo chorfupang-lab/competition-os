@@ -86,6 +86,15 @@ async function serverEvent(tx: Tx, attempt: Pick<Attempt, "id" | "tenant_id">, s
   await tx.insertInto("integrity_events").values({ tenant_id: attempt.tenant_id, attempt_id: attempt.id, session_id: sessionId, source: "server", type, details: JSON.stringify(details), client_time: null }).execute();
 }
 
+export async function loadAdjustments(tx: Tx, roundId: string, groupId: string) {
+  return tx
+    .selectFrom("question_adjustments")
+    .select(["item_id", "kind", "replacement_item_id"])
+    .where("round_id", "=", roundId)
+    .where((eb) => eb.or([eb("group_id", "is", null), eb("group_id", "=", groupId)]))
+    .execute();
+}
+
 // ---------------------------------------------------------------- start
 
 export interface StartInput {
@@ -107,24 +116,42 @@ export async function startOrResumeAttempt(tx: Tx, request: FastifyRequest, inpu
   if (comp.status !== "published" || !comp.current_version_id) throw new AppError("CONFLICT", { reason: "competition_not_running" });
   const { round, rg } = await loadVersionContext(tx, comp.current_version_id, input.roundId, reg.group_id);
   if (!rg.enabled) throw new AppError("CONFLICT", { reason: "group_not_in_round" });
-  if (round.entry.type !== "registration") throw new AppError("CONFLICT", { reason: "qualification_not_available", hint: "Qualified entry opens when results are published" });
+  const cancelled = await tx.selectFrom("round_states").select("status").where("competition_id", "=", reg.competition_id).where("round_id", "=", round.id).executeTakeFirst();
+  if (cancelled) throw new AppError("CONFLICT", { reason: "round_cancelled" });
+  if (round.entry.type === "qualified_from") {
+    // Only participants marked qualified in the source round's PUBLISHED results may enter.
+    const q = await tx
+      .selectFrom("result_entries as e")
+      .innerJoin("result_versions as v", "v.id", "e.result_version_id")
+      .select("e.qualified")
+      .where("v.round_id", "=", round.entry.roundId)
+      .where("v.status", "=", "published")
+      .where("e.registration_id", "=", reg.id)
+      .executeTakeFirst();
+    if (!q) throw new AppError("CONFLICT", { reason: "qualification_not_available", hint: "Qualified entry opens when results are published" });
+    if (!q.qualified) throw new AppError("CONFLICT", { reason: "not_qualified" });
+  }
+  const { n: used } = await tx.selectFrom("attempts").select((eb) => eb.fn.countAll<string>().as("n")).where("registration_id", "=", reg.id).where("round_id", "=", round.id).executeTakeFirstOrThrow();
+  const grantRows = await tx.selectFrom("attempt_grants").select(["replaces_attempt_id", "available_until", "created_at"]).where("registration_id", "=", reg.id).where("round_id", "=", round.id).orderBy("created_at", "desc").execute();
+  const left = remainingAttempts(round.attemptPolicy, Number(used), grantRows.length);
+  if (left !== null && left <= 0) throw new AppError("CONFLICT", { reason: "no_attempts_left" });
+  // A make-up grant may extend the window past the round's close.
+  const grantWindow = grantRows.find((g) => g.available_until && g.available_until > now)?.available_until ?? null;
+  const closesAt = new Date(Math.max(Date.parse(round.closesAt), grantWindow?.getTime() ?? 0));
   if (now < new Date(round.opensAt)) throw new AppError("CONFLICT", { reason: "round_not_open", opensAt: round.opensAt });
-  if (now >= new Date(round.closesAt)) throw new AppError("CONFLICT", { reason: "round_closed", closedAt: round.closesAt });
+  if (now >= closesAt) throw new AppError("CONFLICT", { reason: "round_closed", closedAt: round.closesAt });
   const contentVersionId = rg.content.contentBankVersionId;
   if (!contentVersionId) throw new AppError("CONFLICT", { reason: "no_content" });
 
-  const { n: used } = await tx.selectFrom("attempts").select((eb) => eb.fn.countAll<string>().as("n")).where("registration_id", "=", reg.id).where("round_id", "=", round.id).executeTakeFirstOrThrow();
-  const { n: grants } = await tx.selectFrom("attempt_grants").select((eb) => eb.fn.countAll<string>().as("n")).where("registration_id", "=", reg.id).where("round_id", "=", round.id).executeTakeFirstOrThrow();
-  const left = remainingAttempts(round.attemptPolicy, Number(used), Number(grants));
-  if (left !== null && left <= 0) throw new AppError("CONFLICT", { reason: "no_attempts_left" });
-
   const pool = await loadPool(tx, contentVersionId);
+  // Questions disabled or replaced by an emergency action are not given to new attempts.
+  const adjustments = await loadAdjustments(tx, round.id, reg.group_id);
+  const excluded = new Set(adjustments.filter((a) => a.kind !== "full_credit").map((a) => a.item_id));
+  const replacements = adjustments.filter((a) => a.kind === "replaced").map((a) => a.replacement_item_id!);
   const id = newId();
-  const questionSet = buildQuestionSet([...pool.values()].map((p) => p.pool), rg, id);
+  const questionSet = buildQuestionSet([...pool.values()].map((p) => p.pool), rg, id, { exclude: excluded, require: replacements.filter((r) => pool.has(r)) });
   if (questionSet.length === 0) throw new AppError("CONFLICT", { reason: "no_content" });
-  const makeupOf = Number(grants) > 0
-    ? (await tx.selectFrom("attempt_grants").select("replaces_attempt_id").where("registration_id", "=", reg.id).where("round_id", "=", round.id).orderBy("created_at", "desc").executeTakeFirst())?.replaces_attempt_id ?? null
-    : null;
+  const makeupOf = grantRows[0]?.replaces_attempt_id ?? null;
 
   await tx
     .insertInto("attempts")
@@ -146,7 +173,7 @@ export async function startOrResumeAttempt(tx: Tx, request: FastifyRequest, inpu
       seed: id,
       question_set: JSON.stringify(questionSet),
       started_at: now,
-      deadline_at: attemptDeadline(now, rg.durationSeconds, 0, new Date(round.closesAt)),
+      deadline_at: attemptDeadline(now, rg.durationSeconds, 0, closesAt),
       submitted_at: null,
       submit_reason: null,
       score: null,
@@ -387,37 +414,7 @@ export async function submitAttempt(tx: Tx, request: FastifyRequest | null, atte
   const locked = await tx.selectFrom("attempts").selectAll().where("id", "=", attempt.id).forUpdate().executeTakeFirstOrThrow();
   if (locked.status === "submitted" || locked.status === "invalidated") return locked as Attempt;
   const { rg } = await loadVersionContext(tx, locked.competition_version_id, locked.round_id, locked.group_id);
-  const refs = locked.question_set as QuestionRef[];
-  const pool = await loadPool(tx, locked.content_version_id, refs.map((r) => r.itemId));
-  const answers = new Map((await tx.selectFrom("attempt_answers").selectAll().where("attempt_id", "=", locked.id).execute()).map((a) => [a.item_id, a]));
-
-  const graded: GradedItem[] = [];
-  const facts: AnswerFact[] = [];
-  let pendingAi = false;
-  let pendingManual = false;
-  for (const ref of refs) {
-    const item = pool.get(ref.itemId)!.snapshot.item;
-    const answer = answers.get(ref.itemId);
-    const grade: GradeOutcome = gradeResponse(item, (answer?.response ?? null) as ItemResponse | null);
-    if (grade.outcome === "pending_ai") pendingAi = true;
-    if (grade.outcome === "pending_manual") pendingManual = true;
-    const g = toGradedItem({ itemId: ref.itemId, points: item.points, difficulty: item.difficulty }, grade, answer?.time_spent_ms);
-    if (g) graded.push(g);
-    if (answer) {
-      await tx.updateTable("attempt_answers").set({ grade: JSON.stringify(grade) }).where("attempt_id", "=", locked.id).where("item_id", "=", ref.itemId).execute();
-      const chosen = (answer.response as { optionId?: string } | null)?.optionId;
-      facts.push({
-        itemId: ref.itemId,
-        response: JSON.stringify(answer.response),
-        correct: grade.outcome === "correct",
-        timeSpentMs: answer.time_spent_ms,
-        displayedPosition: chosen && ref.order.options ? ref.order.options.indexOf(chosen) : null,
-      });
-    }
-  }
-  const score = scoreAttempt(graded, rg.scoring);
-  const { items: _items, ...summary } = score;
-  void _items;
+  const { summary, facts, pendingAi, pendingManual } = await gradeAndScore(tx, locked as Attempt, rg, true);
 
   // Server-side anomaly checks.
   const speed = detectImpossibleSpeed(facts);
@@ -474,6 +471,68 @@ export async function submitAttempt(tx: Tx, request: FastifyRequest | null, atte
     metadata: reason === "participant" ? {} : { via: "system" },
   });
   return (await tx.selectFrom("attempts").selectAll().where("id", "=", locked.id).executeTakeFirstOrThrow()) as Attempt;
+}
+
+/**
+ * Grade every question of an attempt and score it with the round-group rule.
+ * Question adjustments (disabled / full credit / replaced) and judges'
+ * manual grades are applied; unanswered questions count as unanswered,
+ * whatever their type. Writing grades is optional (re-scoring keeps them).
+ */
+export async function gradeAndScore(tx: Tx, attempt: Attempt, rg: RoundGroupConfig, writeGrades: boolean) {
+  const refs = attempt.question_set as QuestionRef[];
+  const pool = await loadPool(tx, attempt.content_version_id, refs.map((r) => r.itemId));
+  const answers = new Map((await tx.selectFrom("attempt_answers").selectAll().where("attempt_id", "=", attempt.id).execute()).map((a) => [a.item_id, a]));
+  const adjustments = new Map((await loadAdjustments(tx, attempt.round_id, attempt.group_id)).map((a) => [a.item_id, a.kind]));
+  const graded: GradedItem[] = [];
+  const facts: AnswerFact[] = [];
+  let pendingAi = false;
+  let pendingManual = false;
+  for (const ref of refs) {
+    const item = pool.get(ref.itemId)!.snapshot.item;
+    const answer = answers.get(ref.itemId);
+    const stored = answer?.grade as (GradeOutcome & { manual?: boolean }) | null | undefined;
+    let grade: GradeOutcome;
+    if (!answer || answer.response === null) grade = { outcome: "unanswered", fraction: 0 };
+    else if (stored?.manual) grade = stored;
+    else grade = gradeResponse(item, answer.response as ItemResponse);
+    const adj = adjustments.get(ref.itemId);
+    const scored: "full_credit" | "disabled" | undefined = adj === "full_credit" ? "full_credit" : adj === "disabled" || adj === "replaced" ? "disabled" : undefined;
+    if (!scored) {
+      if (grade.outcome === "pending_ai") pendingAi = true;
+      if (grade.outcome === "pending_manual") pendingManual = true;
+    }
+    const g = scored
+      ? { itemId: ref.itemId, maxPoints: item.points, difficulty: item.difficulty, outcome: "unanswered" as const, adjustment: scored }
+      : toGradedItem({ itemId: ref.itemId, points: item.points, difficulty: item.difficulty }, grade, answer?.time_spent_ms);
+    if (g) graded.push(g);
+    if (answer && writeGrades && !stored?.manual) {
+      await tx.updateTable("attempt_answers").set({ grade: JSON.stringify(grade) }).where("attempt_id", "=", attempt.id).where("item_id", "=", ref.itemId).execute();
+    }
+    if (answer) {
+      const chosen = (answer.response as { optionId?: string } | null)?.optionId;
+      facts.push({
+        itemId: ref.itemId,
+        response: JSON.stringify(answer.response),
+        correct: grade.outcome === "correct",
+        timeSpentMs: answer.time_spent_ms,
+        displayedPosition: chosen && ref.order.options ? ref.order.options.indexOf(chosen) : null,
+      });
+    }
+  }
+  const { items: _items, ...summary } = scoreAttempt(graded, rg.scoring);
+  void _items;
+  return { summary, facts, pendingAi, pendingManual };
+}
+
+/** Re-score a submitted attempt (question fix, manual grade); the previous score is kept in history. */
+export async function rescoreAttempt(tx: Tx, attempt: Attempt, reason: string, emergencyActionId: string | null) {
+  const { rg } = await loadVersionContext(tx, attempt.competition_version_id, attempt.round_id, attempt.group_id);
+  await tx.insertInto("attempt_score_history").values({ tenant_id: attempt.tenant_id, attempt_id: attempt.id, score: attempt.score === null ? null : JSON.stringify(attempt.score), score_status: attempt.score_status, reason, emergency_action_id: emergencyActionId }).execute();
+  const { summary, pendingAi, pendingManual } = await gradeAndScore(tx, attempt, rg, false);
+  const scoreStatus = pendingAi ? "pending_ai" : pendingManual ? "pending_manual" : "scored";
+  await tx.updateTable("attempts").set({ score: JSON.stringify(summary), score_status: scoreStatus }).where("id", "=", attempt.id).execute();
+  return { before: attempt.score as { totalScore?: number } | null, after: summary, scoreStatus };
 }
 
 /** Submit on access if the deadline (plus offline-sync grace) has passed. */

@@ -331,12 +331,36 @@ exactly (stage 6 recalculation) or reconstructed for an appeal.
 `integrity_events`, and the score in `risk_cases`. A case starts `flagged`;
 judges move it through review in stage 6.
 
+## Judging and results (stage 6)
+
+See [results.md](results.md).
+
+- **Results are versions, not mutable rows.** `result_versions` and
+  `result_entries` are snapshots, enforced by triggers. A version's status
+  only moves forward. One open version per round × group, and one published.
+  This gives HR10 (before/after preserved), HR16 (only the Head Judge
+  approves and overrides) and HR17 (deterministic computation in
+  `packages/core/src/results`).
+- **Approval = publication.** The "approved" status is transient; approving
+  publishes in the same transaction. The `resultsPublication` setting
+  decides when the public and families can see it.
+- **Emergency actions are data.** `emergency_actions` is append-only, and
+  scoring reads `question_adjustments`. Re-scoring is a pure function of the
+  frozen question set, saved answers, adjustments and manual grades, so it
+  is repeatable.
+- **Head Judge-only permissions** (`HEAD_JUDGE_ONLY`): `review.approve`,
+  `result.override`, `integrity.disqualify`, `emergency.override`.
+
 ## Decisions to revisit
 
 - **Schools are tenant-scoped in the MVP.** A school taking part with two
   organizers has a school record in each. The same school-admin login can
   hold memberships in both. A platform-level school directory can be added
   later without breaking this.
+- **Partial manual grades follow the round's scoring rule.** With
+  `partialCredit: "none"`, a 0.5 grade earns no points. Organizers should
+  enable proportional credit for rounds with manually graded items.
+- **Judges review blind** unless also given tenant-wide student access.
 - **Fullscreen "pause" keeps the timer running.** Pausing hides the
   questions until fullscreen returns, so leaving fullscreen never buys
   extra time. Extensions are an explicit Head Judge action instead.

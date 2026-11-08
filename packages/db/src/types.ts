@@ -162,6 +162,9 @@ export interface CompetitionsTable {
   consent_text_i18n: ColumnType<unknown, string | undefined, string>;
   tax_rate_id: string | null;
   payment_hold_minutes: Generated<number>;
+  results_publication: Generated<"on_approval" | "after_competition_ends" | "never">;
+  leaderboard_privacy: Generated<"full_name" | "first_name_initial" | "nickname" | "anonymous_code" | "rank_score_only">;
+  live_leaderboard: Generated<boolean>;
 }
 
 export interface CompetitionVersionsTable {
@@ -610,6 +613,10 @@ export interface RiskCasesTable {
   status: Generated<"flagged" | "under_review" | "cleared" | "warning" | "disqualified">;
   risk_score: number;
   signals: Json;
+  opened_by: string | null;
+  decided_by: string | null;
+  decided_at: NullableTimestamp;
+  decision_reason: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -622,6 +629,122 @@ export interface AttemptGrantsTable {
   replaces_attempt_id: string | null;
   reason: string;
   granted_by: string | null;
+  available_until: NullableTimestamp;
+  created_at: Timestamp;
+}
+
+export interface EmergencyActionsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  competition_id: string;
+  round_id: string | null;
+  group_id: string | null;
+  kind: "extend_time" | "reopen_attempt" | "invalidate_attempt" | "makeup_attempt" | "disable_question" | "full_credit" | "replace_question" | "cancel_round";
+  reason: string;
+  actor_user_id: string;
+  before: Json;
+  after: Json;
+  affected: Json;
+  created_at: Timestamp;
+}
+
+export interface QuestionAdjustmentsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  competition_id: string;
+  round_id: string;
+  group_id: string | null;
+  item_id: string;
+  kind: "disabled" | "full_credit" | "replaced";
+  replacement_item_id: string | null;
+  emergency_action_id: string;
+  created_at: Timestamp;
+}
+
+export interface AttemptScoreHistoryTable {
+  id: Generated<string>;
+  tenant_id: string;
+  attempt_id: string;
+  score: Json | null;
+  score_status: string;
+  reason: string;
+  emergency_action_id: string | null;
+  created_at: Timestamp;
+}
+
+export interface RoundStatesTable {
+  tenant_id: string;
+  competition_id: string;
+  round_id: string;
+  status: "cancelled";
+  emergency_action_id: string;
+  created_at: Timestamp;
+}
+
+export interface RiskCaseReviewsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  risk_case_id: string;
+  reviewer_user_id: string;
+  kind: "recommendation" | "decision" | "note";
+  recommendation: "clear" | "warning" | "disqualify" | null;
+  decision: "cleared" | "warning" | "disqualified" | null;
+  note: string;
+  created_at: Timestamp;
+}
+
+export interface ResultVersionsTable {
+  id: string;
+  tenant_id: string;
+  competition_id: string;
+  round_id: string;
+  group_id: string;
+  version_number: number;
+  status: "draft" | "in_review" | "approved" | "published" | "superseded" | "discarded";
+  competition_version_id: string;
+  inputs: Json;
+  changes: Json;
+  summary: Json;
+  trigger: "manual" | "recalculation";
+  note: string | null;
+  created_by: string | null;
+  created_at: Timestamp;
+  submitted_at: NullableTimestamp;
+  approved_by: string | null;
+  approved_at: NullableTimestamp;
+  published_at: NullableTimestamp;
+}
+
+type Num = ColumnType<string | null, number | string | null, number | string | null>;
+
+export interface ResultEntriesTable {
+  tenant_id: string;
+  result_version_id: string;
+  registration_id: string;
+  student_id: string;
+  attempt_id: string | null;
+  status: "ok" | "disqualified" | "no_attempt";
+  total_score: Num;
+  original_score: Num;
+  accuracy: Num;
+  time_ms: Num;
+  hard_question_score: Num;
+  submitted_at: NullableTimestamp;
+  rank: number | null;
+  tied_with: number | null;
+  scope_ranks: Json;
+  qualified: boolean;
+  qualification_basis: string | null;
+  overrides: Json;
+}
+
+export interface ResultReviewsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  result_version_id: string;
+  reviewer_user_id: string;
+  recommendation: "approve" | "changes_requested";
+  note: string | null;
   created_at: Timestamp;
 }
 
@@ -666,6 +789,14 @@ export interface Database {
   integrity_events: IntegrityEventsTable;
   risk_cases: RiskCasesTable;
   attempt_grants: AttemptGrantsTable;
+  emergency_actions: EmergencyActionsTable;
+  question_adjustments: QuestionAdjustmentsTable;
+  attempt_score_history: AttemptScoreHistoryTable;
+  round_states: RoundStatesTable;
+  risk_case_reviews: RiskCaseReviewsTable;
+  result_versions: ResultVersionsTable;
+  result_entries: ResultEntriesTable;
+  result_reviews: ResultReviewsTable;
 }
 
 export type Tenant = Selectable<TenantsTable>;
@@ -687,3 +818,5 @@ export type Payment = Selectable<PaymentsTable>;
 export type Refund = Selectable<RefundsTable>;
 export type Attempt = Selectable<AttemptsTable>;
 export type AttemptSession = Selectable<AttemptSessionsTable>;
+export type ResultVersion = Selectable<ResultVersionsTable>;
+export type ResultEntryRow = Selectable<ResultEntriesTable>;

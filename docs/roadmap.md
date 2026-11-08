@@ -7,8 +7,8 @@
 | 3 | **Content engine**: content banks and versions, items, translations, skills, learning objectives, media, difficulty, Excel import | ✅ Done |
 | 4 | **Registration and payment**: parent/school registration, pricing, offer codes, tax, Airwallex hosted checkout, webhooks, receipts, refunds, reconciliation | ✅ Done (Airwallex sandbox check pending) |
 | 5 | **Competition runtime**: server timer, autosave/resume, devices/sessions, anti-cheat signals | ✅ Done |
-| 6 | Judging and results: review cases, Head Judge approval/override, emergency actions, result versions, recalculation, publication | Next |
-| 7 | Learning Passport and AI: skills over time, pronunciation AI adapter, AI job queue, output validation, practice sets | |
+| 6 | **Judging and results**: review cases, Head Judge approval/override, emergency actions, result versions, recalculation, publication | ✅ Done |
+| 7 | Learning Passport and AI: skills over time, pronunciation AI adapter, AI job queue, output validation, practice sets | Next |
 | 8 | Certificates and notifications | |
 | 9 | SaaS commercial layer: plans, limits, subscriptions, platform fees, AI cost | |
 | 10 | Privacy and internationalization: consent, export, deletion/anonymization, retention | |
@@ -181,6 +181,37 @@ stages 2–4, once there are flows worth putting on screen.
   safe to run in parallel.
 - 209 tests in total.
 
+## Stage 6 — what is in place
+
+- Integrity review: flagged → under review → cleared / warning /
+  disqualified. Judges can open a case on any attempt and record
+  recommendations and notes. Only the Head Judge disqualifies, and a
+  disqualification recomputes existing results.
+- Manual grading by judges for custom items, and as the pronunciation
+  fallback. Re-grading an auto-graded answer is a Head Judge override.
+  Every grade re-scores the attempt and keeps the history.
+- Emergency actions, Head Judge only:
+  - extend time, reopen, invalidate, make-up (usable after the round
+    closes), cancel round;
+  - disable / full credit / replace a question.
+  - Each records actor, reason, before, after and affected attempts, and
+    is audited. Affected attempts are re-scored automatically, and existing
+    results are recomputed as new versions.
+- Versioned official results per round × group, with immutable snapshots,
+  inputs and before/after diffs. Draft → judge review → Head Judge approval →
+  published, and the previous version is superseded and kept. Approval is
+  blocked by an open round, pending grades, open cases, missing judge review
+  or changed attempts.
+- Head Judge overrides (score corrections, qualification
+  wildcards/exclusions) carry forward until replaced.
+- Qualification gates the next round (qualified entry only from published
+  results).
+- Publication modes (on approval / after the competition ends / never),
+  privacy modes A–E (default nickname, falling back to a per-competition
+  anonymous code), an optional live provisional board, and family results.
+- Blind judging: judges see anonymous codes, organizers see names.
+- 229 tests in total.
+
 ## Known gaps carried forward
 
 - Email verification, password reset, invitations: stage 8 (notifications).
@@ -188,11 +219,10 @@ stages 2–4, once there are flows worth putting on screen.
   events already exist in the audit log.
 - Receipts are HTML. PDF receipts with embedded CJK and Thai fonts come with
   the certificate engine (stage 8), which uses the same renderer approach.
-- Qualified-entry rounds (finals) open to participants once qualification
-  results are published (stage 6).
-- Time extensions, invalidation and make-up grants are supported by the
-  runtime. Their audited admin actions come with emergency overrides
-  (stage 6).
+- Certificates are reissued when a result version supersedes another
+  (stage 8: certificate engine).
+- Team rankings: the team scope exists in ranking but has no team
+  membership yet (simple team module later, per the MVP scope).
 - Pronunciation recordings: upload, the AI queue and scoring are stage 7.
   Until then, pronunciation items leave the attempt `pending_ai`.
 - Claiming an existing student (a parent linking to a school-created
