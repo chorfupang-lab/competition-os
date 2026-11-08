@@ -10,6 +10,7 @@ import { hashToken } from "./lib/crypto.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { catalogRoutes } from "./routes/catalog.ts";
 import { competitionRoutes } from "./routes/competitions.ts";
+import { contentRoutes } from "./routes/content.ts";
 import { meRoutes } from "./routes/me.ts";
 import { platformRoutes } from "./routes/platform.ts";
 import { tenantRoutes } from "./routes/tenant.ts";
@@ -101,6 +102,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(platformRoutes, { prefix: "/platform" });
   await app.register(tenantRoutes, { prefix: "/t/:tenantId" });
   await app.register(competitionRoutes, { prefix: "/t/:tenantId/competitions" });
+  await app.register(contentRoutes, { prefix: "/t/:tenantId/content" });
   await app.register(catalogRoutes, { prefix: "/competitions" });
   return app;
 }

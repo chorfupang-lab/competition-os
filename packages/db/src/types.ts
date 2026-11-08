@@ -170,6 +170,144 @@ export interface CompetitionVersionsTable {
   published_by: string | null;
 }
 
+export interface SkillFrameworksTable {
+  id: Generated<string>;
+  tenant_id: string;
+  key: string;
+  name: string;
+  name_i18n: Json;
+  status: Generated<"active" | "archived">;
+  created_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface SkillsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  framework_id: string;
+  parent_id: string | null;
+  key: string;
+  name: string;
+  name_i18n: Json;
+  description_i18n: Json;
+  sort_order: Generated<number>;
+  status: Generated<"active" | "archived">;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface ContentBanksTable {
+  id: Generated<string>;
+  tenant_id: string;
+  key: string;
+  name: string;
+  name_i18n: Json;
+  description_i18n: Json;
+  base_locale: string;
+  required_locales: string[];
+  skill_framework_id: string | null;
+  status: Generated<"active" | "archived">;
+  created_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface LearningObjectivesTable {
+  id: Generated<string>;
+  tenant_id: string;
+  bank_id: string;
+  key: string;
+  title: string;
+  title_i18n: Json;
+  skill_ids: string[];
+  status: Generated<"active" | "archived">;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface ContentItemsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  bank_id: string;
+  external_key: string;
+  content_type: string;
+  base_locale: string;
+  difficulty: "easy" | "medium" | "hard" | "expert";
+  /** numeric comes back from pg as a string */
+  points: ColumnType<string, number | string, number | string>;
+  category: string | null;
+  tags: string[];
+  explanation: string | null;
+  explanation_media: Json;
+  source_reference: string | null;
+  skill_ids: string[];
+  objective_ids: string[];
+  body: Json;
+  status: Generated<"draft" | "ready" | "retired">;
+  revision: Generated<number>;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface ContentItemTranslationsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  item_id: string;
+  locale: string;
+  strings: Json;
+  source_hash: string;
+  status: Generated<"draft" | "approved">;
+  updated_by: string | null;
+  approved_by: string | null;
+  approved_at: NullableTimestamp;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface ContentBankVersionsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  bank_id: string;
+  version_number: number;
+  item_count: number;
+  summary: Json;
+  note: string | null;
+  published_by: string | null;
+  published_at: Timestamp;
+}
+
+export interface ContentVersionItemsTable {
+  tenant_id: string;
+  version_id: string;
+  item_id: string;
+  external_key: string;
+  content_type: string;
+  difficulty: "easy" | "medium" | "hard" | "expert";
+  category: string | null;
+  tags: string[];
+  locales: string[];
+  snapshot: Json;
+}
+
+export interface ContentImportsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  bank_id: string;
+  filename: string | null;
+  status: "validated" | "rejected" | "committed";
+  row_count: number;
+  rows: Json;
+  errors: Json;
+  summary: Json;
+  created_by: string | null;
+  created_at: Timestamp;
+  committed_by: string | null;
+  committed_at: NullableTimestamp;
+}
+
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
@@ -183,6 +321,15 @@ export interface Database {
   audit_logs: AuditLogsTable;
   competitions: CompetitionsTable;
   competition_versions: CompetitionVersionsTable;
+  skill_frameworks: SkillFrameworksTable;
+  skills: SkillsTable;
+  content_banks: ContentBanksTable;
+  learning_objectives: LearningObjectivesTable;
+  content_items: ContentItemsTable;
+  content_item_translations: ContentItemTranslationsTable;
+  content_bank_versions: ContentBankVersionsTable;
+  content_version_items: ContentVersionItemsTable;
+  content_imports: ContentImportsTable;
 }
 
 export type Tenant = Selectable<TenantsTable>;
@@ -195,3 +342,6 @@ export type StudentUpdate = Updateable<StudentsTable>;
 export type AuditLog = Selectable<AuditLogsTable>;
 export type Competition = Selectable<CompetitionsTable>;
 export type CompetitionVersion = Selectable<CompetitionVersionsTable>;
+export type ContentBank = Selectable<ContentBanksTable>;
+export type ContentItem = Selectable<ContentItemsTable>;
+export type ContentItemTranslation = Selectable<ContentItemTranslationsTable>;

@@ -31,7 +31,9 @@ describe("creating competitions", () => {
   it("starts with a draft version 1 from the standard template", async () => {
     const { competition, draft } = await createCompetition(A);
     expect(competition).toMatchObject({ status: "draft", feeMode: "free", currency: null, timezone: "Asia/Hong_Kong", interfaceLocales: ["zh-Hant"], currentVersionId: null });
-    expect(draft).toMatchObject({ versionNumber: 1, status: "draft", revision: 1, issues: [] });
+    expect(draft).toMatchObject({ versionNumber: 1, status: "draft", revision: 1 });
+    // No errors; only "no content selected yet" warnings until content is linked.
+    expect(new Set(draft.issues.map((i: { severity: string; code: string }) => `${i.severity}:${i.code}`))).toEqual(new Set(["warning:NO_CONTENT"]));
     expect(draft.config.groups.map((g: { key: string }) => g.key)).toEqual(["kindergarten", "primary", "secondary", "open"]);
   });
 
@@ -134,7 +136,7 @@ describe("drafts, validation and publishing", () => {
     const past = Date.now() - 3_600_000;
     config.rounds[0]!.opensAt = new Date(past).toISOString();
     const { competition, draft } = await createCompetition(A, { config });
-    expect(draft.issues.map((i: { code: string }) => i.code)).toEqual(["OPENS_IN_PAST"]);
+    expect(draft.issues.map((i: { code: string }) => i.code).filter((c: string) => c !== "NO_CONTENT")).toEqual(["OPENS_IN_PAST"]);
     expect((await publish(A, competition.id, draft.id)).status).toBe(200);
 
     const v2 = (await call(env.app, A.admin, "POST", `${base(A)}/${competition.id}/versions`)).body.version;

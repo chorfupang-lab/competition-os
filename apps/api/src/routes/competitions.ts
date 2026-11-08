@@ -13,7 +13,10 @@ import {
   rankParticipants,
   standardTemplate,
   validateConfig,
+  validateContentReferences,
   type CompetitionConfig,
+  type ConfigIssue,
+  type VersionItemSummary,
 } from "@cos/core";
 import { withContext, type Competition, type CompetitionVersion, type Tx } from "@cos/db";
 import { audit } from "../lib/audit.ts";
@@ -133,10 +136,43 @@ async function loadVersion(tx: Tx, competitionId: string, versionId: string, for
   return v;
 }
 
+/** Stored configs are re-parsed so documents saved under an older schema get the current defaults. */
+export const asConfig = (json: unknown): CompetitionConfig => CompetitionConfigSchema.parse(json);
+
 async function publishedConfig(tx: Tx, competition: Competition): Promise<CompetitionConfig | null> {
   if (!competition.current_version_id) return null;
   const v = await tx.selectFrom("competition_versions").select("config").where("id", "=", competition.current_version_id).executeTakeFirst();
-  return v ? (v.config as CompetitionConfig) : null;
+  return v ? asConfig(v.config) : null;
+}
+
+/** Content references: each referenced Content Bank Version must exist in this tenant and cover the question count. */
+async function contentIssues(tx: Tx, competition: Competition, config: CompetitionConfig): Promise<ConfigIssue[]> {
+  const ids = [...new Set(config.rounds.flatMap((r) => r.groups.map((g) => g.content.contentBankVersionId)).filter((x): x is string => !!x))];
+  const versions = new Map<string, VersionItemSummary[]>();
+  if (ids.length) {
+    // RLS limits both queries to this tenant, so another tenant's version id is "not found".
+    const found = await tx.selectFrom("content_bank_versions").select("id").where("id", "in", ids).execute();
+    for (const v of found) versions.set(v.id, []);
+    const items = await tx
+      .selectFrom("content_version_items")
+      .select(["version_id", "content_type", "difficulty", "category", "tags", "locales"])
+      .where("version_id", "in", ids)
+      .execute();
+    for (const i of items) {
+      versions.get(i.version_id)?.push({
+        contentType: i.content_type as VersionItemSummary["contentType"],
+        difficulty: i.difficulty,
+        category: i.category,
+        tags: i.tags,
+        locales: i.locales,
+      });
+    }
+  }
+  return validateContentReferences(config, versions, competition.content_locales);
+}
+
+async function allIssues(tx: Tx, competition: Competition, config: CompetitionConfig, published: CompetitionConfig | null): Promise<ConfigIssue[]> {
+  return [...validateConfig(config, { published }), ...(await contentIssues(tx, competition, config))];
 }
 
 export async function competitionRoutes(app: FastifyInstance): Promise<void> {
@@ -215,11 +251,11 @@ export async function competitionRoutes(app: FastifyInstance): Promise<void> {
         targetId: competition.id,
         after: presentCompetition(competition),
       });
-      return { competition, version };
+      return { competition, version, issues: await allIssues(tx, competition, config, null) };
     });
     return reply.status(201).send({
       competition: presentCompetition(result.competition),
-      draft: presentVersion(result.version, validateConfig(config)),
+      draft: presentVersion(result.version, result.issues),
     });
   });
 
@@ -349,9 +385,9 @@ export async function competitionRoutes(app: FastifyInstance): Promise<void> {
         targetId: v.id,
         after: { competitionId, versionNumber: v.version_number },
       });
-      return { v, published: base };
+      return { v, issues: await allIssues(tx, competition, base, base) };
     });
-    return reply.status(201).send({ version: presentVersion(version.v, validateConfig(version.v.config as CompetitionConfig, { published: version.published })) });
+    return reply.status(201).send({ version: presentVersion(version.v, version.issues) });
   });
 
   app.get("/:competitionId/versions/:versionId", async (request) => {
@@ -362,7 +398,7 @@ export async function competitionRoutes(app: FastifyInstance): Promise<void> {
       const version = await loadVersion(tx, competitionId, versionId);
       const issues =
         version.status === "draft"
-          ? validateConfig(version.config as CompetitionConfig, { published: await publishedConfig(tx, competition) })
+          ? await allIssues(tx, competition, asConfig(version.config), await publishedConfig(tx, competition))
           : [];
       return { version: presentVersion(version, issues) };
     });
@@ -392,9 +428,9 @@ export async function competitionRoutes(app: FastifyInstance): Promise<void> {
         action: "competition.config_saved",
         targetType: "competition_version",
         targetId: versionId,
-        after: { revision: version.revision, changes: diffConfigs(before.config as CompetitionConfig, config) },
+        after: { revision: version.revision, changes: diffConfigs(asConfig(before.config), config) },
       });
-      return { version, issues: validateConfig(config, { published: await publishedConfig(tx, competition) }) };
+      return { version, issues: await allIssues(tx, competition, config, await publishedConfig(tx, competition)) };
     });
     return { version: presentVersion(result.version, result.issues) };
   });
@@ -416,8 +452,8 @@ export async function competitionRoutes(app: FastifyInstance): Promise<void> {
       if (version.status !== "draft") throw new AppError("CONFLICT", { reason: "version_locked", status: version.status });
       const previous = await publishedConfig(tx, competition);
       if (previous && !body.note) throw new AppError("REASON_REQUIRED", { field: "note" });
-      const config = version.config as CompetitionConfig;
-      const issues = validateConfig(config, { published: previous });
+      const config = asConfig(version.config);
+      const issues = await allIssues(tx, competition, config, previous);
       if (hasErrors(issues)) throw new AppError("CONFLICT", { reason: "config_has_errors", issues });
 
       const now = new Date();
@@ -469,7 +505,7 @@ export async function competitionRoutes(app: FastifyInstance): Promise<void> {
     const { versionId } = parse(VersionParams, request.params);
     const body = parse(SimulateBody, request.body);
     const version = await withContext(db, scope.db, (tx) => loadVersion(tx, competitionId, versionId));
-    const config = version.config as CompetitionConfig;
+    const config = asConfig(version.config);
     const round = config.rounds.find((r) => r.id === body.roundId);
     const rg = round?.groups.find((g) => g.groupId === body.groupId && g.enabled);
     if (!round || !rg) throw new AppError("NOT_FOUND", { field: !round ? "roundId" : "groupId" });
@@ -519,7 +555,7 @@ export async function competitionRoutes(app: FastifyInstance): Promise<void> {
       }
       return {
         versionId,
-        groups: eligibleGroups(version.config as CompetitionConfig, { dateOfBirth, grade: body.grade }),
+        groups: eligibleGroups(asConfig(version.config), { dateOfBirth, grade: body.grade }),
       };
     });
   });

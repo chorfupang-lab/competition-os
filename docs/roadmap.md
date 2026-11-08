@@ -4,8 +4,8 @@
 |---|---|---|
 | 1 | **Product foundation**: DB, auth, tenants, roles, permissions, isolation, schools/rosters, parents/children, audit | ✅ Done |
 | 2 | **Competition engine**: competitions, config versions, rounds, groups, per-round-group rules, eligibility, attempt policy, scoring, ranking, qualification | ✅ Done |
-| 3 | Content engine: content banks and versions, items, translations, skills, learning objectives, media, difficulty, Excel import | Next |
-| 4 | Registration and payment: parent/school registration, pricing, offer codes, tax, Airwallex hosted checkout, webhooks, receipts, refunds, reconciliation | |
+| 3 | **Content engine**: content banks and versions, items, translations, skills, learning objectives, media, difficulty, Excel import | ✅ Done |
+| 4 | Registration and payment: parent/school registration, pricing, offer codes, tax, Airwallex hosted checkout, webhooks, receipts, refunds, reconciliation | Next |
 | 5 | Competition runtime: server timer, autosave/resume, devices/sessions, anti-cheat signals | |
 | 6 | Judging and results: review cases, Head Judge approval/override, emergency actions, result versions, recalculation, publication | |
 | 7 | Learning Passport and AI: skills over time, pronunciation AI adapter, AI job queue, output validation, practice sets | |
@@ -65,6 +65,42 @@ stages 2–4, once there are flows worth putting on screen.
 - A simulation endpoint, so admins can test ranking and qualification rules.
 - 123 tests in total.
 
+## Stage 3 — what is in place
+
+- Skill frameworks per tenant, hierarchical; a bank uses one framework.
+- Content banks with a base locale and the locales they require.
+- Learning objectives belong to a bank.
+- Items cover all 13 question types. Each has a strict schema with
+  cross-checks: the answer must be one of the options, every blank must
+  appear in the prompt, image choices need images, and so on. Each item
+  also carries difficulty, points, category, tags, skills, objectives,
+  https media, explanation and source. Edits use revision checks.
+- Status is draft / ready / retired, and retiring needs a reason.
+- Deterministic answer checking for every type:
+  - text answers ignore full-width/half-width differences, case and
+    trailing punctuation, and can optionally ignore spaces (useful for CJK);
+  - partial credit for multiple choice, matching, ordering, fill-in-the-blank
+    and drag-and-drop;
+  - pronunciation goes to AI (pending) and custom items to manual grading.
+- Translations are stored apart from items. Only display text is
+  translatable, never answers or pronunciation targets. A translation is
+  marked stale when the source text changes, and approval requires every
+  text to be translated.
+- Excel import:
+  - a template with a sheet for each question type plus a translations
+    sheet, with example rows and dropdowns;
+  - upload validates and previews (create / update / unchanged) with
+    row-level errors, and nothing changes until commit;
+  - commit re-validates against the current bank.
+- Publishing a version snapshots the ready items, their current approved
+  translations, and their skill and objective keys. A version is immutable
+  (database trigger plus grants).
+- Competitions reference a version id. Saving or publishing checks that
+  the version exists in the tenant and that the items matching each
+  round-group's question formats and filters cover its question count, and
+  warns about missing translations.
+- 152 tests in total.
+
 ## Known gaps carried forward
 
 - Email verification, password reset, invitations: stage 8 (notifications).
@@ -73,5 +109,10 @@ stages 2–4, once there are flows worth putting on screen.
 - Anonymization endpoints: stage 10.
 - Group capacity and waitlists are configured now but enforced at
   registration (stage 4).
+- Media are https links for now. Uploads to object storage, with type and
+  size checks, come with production storage (stage 11). Raw voice
+  recordings are handled in stage 7.
+- Questions are picked per participant at runtime (stage 5). The pool
+  check exists now.
 - Results are not stored yet: scoring and ranking run in simulation until
   attempts exist (stage 5) and result versions (stage 6).

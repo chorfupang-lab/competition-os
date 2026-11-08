@@ -207,6 +207,66 @@ guessed.
 - Organizer names come from a narrow `SECURITY DEFINER` function, because
   tenants themselves are not publicly readable.
 
+## Content engine (stage 3)
+
+**Working set vs published version.**
+- A bank's items are an editable working set (`content_items`).
+- Publishing copies every `ready` item into an immutable Content Bank
+  Version (`content_version_items.snapshot`). Each snapshot holds the item,
+  its current approved translations, and the keys of its skills and
+  objectives.
+- Competitions store only the version id (HR11). Editing or retiring a
+  working item never changes a published version. This copies data, but
+  questions are small and media are links.
+
+**Item model.**
+- Shared metadata sits in columns (type, difficulty, points, category,
+  tags, skills, objectives, explanation, source).
+- The type-specific part is a JSON `body`, validated by per-type Zod schemas
+  in `packages/core/src/content/items.ts`.
+- Stored rows are re-validated whenever they are read for publishing.
+
+**Translations are separate** (HR13, `content_item_translations`).
+- A translation is a map from text path to text, e.g. `prompt`,
+  `options.b.text`, `explanation`.
+- `translatableStrings()` decides which paths exist. Answers, accepted
+  text answers and pronunciation targets are never translatable, so a
+  Mandarin reading item keeps its Mandarin target in every interface
+  language.
+- Each translation stores a hash of the source strings it was made from.
+  When the base text changes, the hash no longer matches, so it is marked
+  stale and left out of the next version. That way a translation of an old
+  wording can never reach a published version.
+
+**Grading** (`content/grading.ts`) is deterministic and returns an outcome
+plus a fraction. The round's scoring rule (stage 2) turns that into points.
+Pronunciation returns `pending_ai` and custom items return
+`pending_manual`, so a participant is never blocked waiting for AI (section
+12 of the requirements).
+
+**Skill and objective references** are uuid arrays on the item, not join
+tables, because the application role has no DELETE. The API checks them
+against the bank's framework and objectives on every save, at import and at
+publish.
+
+**Excel import** (`apps/api/src/lib/excel.ts`, `content-import.ts`).
+- The parser is `exceljs`, chosen because the npm `xlsx` package is
+  unmaintained.
+- Uploads are limited to 10 MB and 5,000 rows.
+- An upload is stored as a `content_imports` row: the parsed rows, a
+  row-level error list and a summary.
+- Commit re-plans against the current bank, so a stale preview is never
+  applied.
+- Re-uploading the same `content_id` updates that item (the revision is
+  bumped), and identical rows are reported as unchanged.
+
+**Competition linkage.** `validateContentReferences` (core) runs whenever a
+competition config is saved or published.
+- The version must be found through RLS, i.e. it must belong to this
+  tenant.
+- The pool, after question formats and filters, must cover `questionCount`.
+- It warns when items lack the competition's content locales.
+
 ## Decisions to revisit
 
 - **Schools are tenant-scoped in the MVP.** A school taking part with two

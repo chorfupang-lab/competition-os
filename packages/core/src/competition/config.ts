@@ -107,9 +107,17 @@ export const RoundGroupSchema = z.object({
   content: z
     .object({
       contentBankVersionId: z.uuid().nullable().default(null),
+      /** fixed: every participant gets the same questions; random_from_pool: drawn per participant. */
       selection: z.enum(["fixed", "random_from_pool"]).default("fixed"),
+      filters: z
+        .object({
+          difficulties: z.array(z.enum(DIFFICULTIES)).optional(),
+          categories: z.array(z.string().max(100)).optional(),
+          tags: z.array(z.string().max(50)).optional(),
+        })
+        .default({}),
     })
-    .default({ contentBankVersionId: null, selection: "fixed" }),
+    .default({ contentBankVersionId: null, selection: "fixed", filters: {} }),
   randomizeQuestions: z.boolean().default(true),
   randomizeOptions: z.boolean().default(true),
   ui: z

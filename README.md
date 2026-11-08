@@ -10,7 +10,7 @@ payments, judging, certificates and student Learning Passports.
 
 ## Status
 
-**Stages 1–2 of 11 are complete.**
+**Stages 1–3 of 11 are complete.**
 - Stage 1, product foundation: database, login, tenants, roles and
   permissions, tenant isolation, schools and rosters, parents and children,
   and the audit log.
@@ -18,6 +18,10 @@ payments, judging, certificates and student Learning Passports.
   rounds and groups with per-round-group rules, eligibility, attempt policy,
   scoring, ranking, qualification, competition-scoped roles, and the public
   catalog.
+- Stage 3, content engine: skill frameworks, content banks, learning
+  objectives, all 13 question types with answer checking, translations kept
+  separate from questions, the Excel template and import, and immutable
+  published Content Bank Versions that competitions reference.
 
 This is a backend API only; the web portals come later. See the roadmap for
 what each stage adds.
@@ -28,7 +32,8 @@ what each stage adds.
 apps/api          HTTP API (Fastify). Routes, authorization, integration tests.
 packages/core     Shared rules with no I/O: roles, permissions, locales, error codes,
                   and the competition engine (config schema, eligibility, scoring,
-                  ranking, qualification, validation).
+                  ranking, qualification, validation), and the content engine
+                  (question-type schemas, grading, translations).
 packages/db       PostgreSQL schema (SQL migrations with row-level security),
                   typed query layer (Kysely), migration runner, admin scripts.
 infra/            Local infrastructure config.
@@ -98,3 +103,13 @@ that change data, the `Origin` must be in `ALLOWED_ORIGINS`.
 | `POST .../competitions/:id/eligibility` | Competition or registration admin | Group eligibility for a student, or a date of birth and grade |
 | `GET /competitions`, `GET /competitions/:id` | anyone | Public catalog of published competitions |
 | `GET /me/children/:id/eligibility/:competitionId?grade=P4` | parent | Which groups a child may enter |
+| `GET/POST /t/:tenantId/content/skill-frameworks`, `.../:id/skills` | Competition Admin (read: also Judges) | Skill frameworks (hierarchical) |
+| `GET/POST /t/:tenantId/content/banks`, `GET/PATCH .../banks/:id` | same | Content banks (base locale, required locales, skill framework) |
+| `GET/POST .../banks/:id/objectives` | same | Learning objectives |
+| `GET/POST .../banks/:id/items`, `GET/PUT .../items/:itemId` | same | Questions (send `revision` when editing) |
+| `POST .../items/:itemId/status` | same | draft / ready / retired (reason required) |
+| `PUT .../items/:itemId/translations/:locale` | same | Save or approve a translation |
+| `GET .../items/:itemId/preview?locale=th`, `POST .../grade` | same | Localized preview; try an answer |
+| `GET .../banks/:id/import-template` | same | Download the Excel template |
+| `POST .../banks/:id/imports` (raw .xlsx), `GET .../imports/:importId`, `POST .../commit` | same | Validate → preview / error report → commit |
+| `POST .../banks/:id/versions`, `GET .../versions/:versionId/items` | same | Publish an immutable Content Bank Version; read it |
