@@ -1,0 +1,26 @@
+{
+  "name": "@cos/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cos/core": "workspace:*",
+    "@cos/db": "workspace:*",
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/rate-limit": "^11.2.0",
+    "@node-rs/argon2": "^2.0.2",
+    "fastify": "^5.6.0",
+    "kysely": "~0.29.8",
+    "pg": "^8.16.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.0"
+  }
+}

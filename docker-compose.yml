@@ -1,0 +1,20 @@
+# Local development services. Start with: docker compose up -d
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: cos_owner          # owner/superuser: migrations, admin scripts, tests
+      POSTGRES_PASSWORD: cos_owner_dev
+      POSTGRES_DB: competition_os
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cos_owner -d competition_os"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  pgdata:

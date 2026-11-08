@@ -1,0 +1,21 @@
+{
+  "name": "@cos/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "migrate": "tsx src/cli/migrate.ts",
+    "create-platform-admin": "tsx src/cli/create-platform-admin.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "echo 'db is tested through apps/api integration tests'"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "^2.0.2",
+    "kysely": "~0.29.8",
+    "pg": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.0"
+  }
+}
