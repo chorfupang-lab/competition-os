@@ -68,6 +68,7 @@ export interface TenantMembershipsTable {
   user_id: string;
   role: "competition_admin" | "school_admin" | "judge" | "head_judge";
   school_id: string | null;
+  competition_id: Generated<string | null>;
   status: Generated<"active" | "revoked">;
   created_by: string | null;
   created_at: Timestamp;
@@ -131,6 +132,44 @@ export interface AuditLogsTable {
   metadata: Json;
 }
 
+export interface CompetitionsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  slug: string;
+  name: string;
+  name_i18n: Json;
+  description_i18n: Json;
+  status: Generated<"draft" | "published" | "cancelled" | "archived">;
+  visibility: Generated<"public" | "unlisted" | "private">;
+  fee_mode: "free" | "paid";
+  currency: string | null;
+  timezone: string;
+  interface_locales: string[];
+  content_locales: string[];
+  current_version_id: string | null;
+  created_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  first_published_at: NullableTimestamp;
+  cancelled_at: NullableTimestamp;
+}
+
+export interface CompetitionVersionsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  competition_id: string;
+  version_number: number;
+  status: Generated<"draft" | "published" | "superseded">;
+  config: Json;
+  revision: Generated<number>;
+  change_note: string | null;
+  created_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  published_at: NullableTimestamp;
+  published_by: string | null;
+}
+
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
@@ -142,6 +181,8 @@ export interface Database {
   tenant_students: TenantStudentsTable;
   school_students: SchoolStudentsTable;
   audit_logs: AuditLogsTable;
+  competitions: CompetitionsTable;
+  competition_versions: CompetitionVersionsTable;
 }
 
 export type Tenant = Selectable<TenantsTable>;
@@ -152,3 +193,5 @@ export type Student = Selectable<StudentsTable>;
 export type NewStudent = Insertable<StudentsTable>;
 export type StudentUpdate = Updateable<StudentsTable>;
 export type AuditLog = Selectable<AuditLogsTable>;
+export type Competition = Selectable<CompetitionsTable>;
+export type CompetitionVersion = Selectable<CompetitionVersionsTable>;

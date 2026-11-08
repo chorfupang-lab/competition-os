@@ -12,10 +12,14 @@ import { parse, zDate, zEmail, zI18n, zLocale, zName, zReason, zTenantRole, zUui
 const TenantParams = z.object({ tenantId: zUuid });
 
 const GrantBody = z
-  .object({ email: zEmail, role: zTenantRole, schoolId: zUuid.optional() })
+  .object({ email: zEmail, role: zTenantRole, schoolId: zUuid.optional(), competitionId: zUuid.optional() })
   .refine((b) => (b.role === "school_admin") === (b.schoolId !== undefined), {
     message: "schoolId is required for school_admin and not allowed for other roles",
     path: ["schoolId"],
+  })
+  .refine((b) => b.competitionId === undefined || b.role !== "school_admin", {
+    message: "school_admin cannot be scoped to a competition",
+    path: ["competitionId"],
   });
 
 const SchoolBody = z.object({
@@ -61,6 +65,7 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       roles: scope.roles,
       permissions: [...scope.permissions].sort(),
       schoolIds: scope.schoolIds,
+      competitionRoles: Object.fromEntries(scope.competitionRoles),
     };
   });
 
@@ -73,7 +78,7 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
       tx
         .selectFrom("tenant_memberships as m")
         .innerJoin("users as u", "u.id", "m.user_id")
-        .select(["m.id", "m.role", "m.school_id", "m.status", "m.created_at", "u.id as user_id", "u.email", "u.display_name"])
+        .select(["m.id", "m.role", "m.school_id", "m.competition_id", "m.status", "m.created_at", "u.id as user_id", "u.email", "u.display_name"])
         .where("m.tenant_id", "=", scope.tenant.id)
         .orderBy("m.created_at")
         .execute(),
@@ -83,6 +88,7 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
         id: m.id,
         role: m.role,
         schoolId: m.school_id,
+        competitionId: m.competition_id,
         status: m.status,
         createdAt: m.created_at,
         user: { id: m.user_id, email: m.email, displayName: m.display_name },
@@ -103,6 +109,15 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
         const school = await tx.selectFrom("schools").select("id").where("id", "=", body.schoolId).executeTakeFirst();
         if (!school) throw new AppError("NOT_FOUND", { field: "schoolId" });
       }
+      if (body.competitionId) {
+        const competition = await tx
+          .selectFrom("competitions")
+          .select("id")
+          .where("id", "=", body.competitionId)
+          .where("tenant_id", "=", scope.tenant.id)
+          .executeTakeFirst();
+        if (!competition) throw new AppError("NOT_FOUND", { field: "competitionId" });
+      }
       const m = await tx
         .insertInto("tenant_memberships")
         .values({
@@ -110,6 +125,7 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
           user_id: userId,
           role: body.role,
           school_id: body.schoolId ?? null,
+          competition_id: body.competitionId ?? null,
           created_by: scope.auth.userId,
           revoked_at: null,
         })
@@ -121,11 +137,11 @@ export async function tenantRoutes(app: FastifyInstance): Promise<void> {
         action: "membership.granted",
         targetType: "membership",
         targetId: m.id,
-        after: { userId, role: m.role, schoolId: m.school_id },
+        after: { userId, role: m.role, schoolId: m.school_id, competitionId: m.competition_id },
       });
       return m;
     });
-    return reply.status(201).send({ membership: { id: membership.id, userId: membership.user_id, role: membership.role, schoolId: membership.school_id } });
+    return reply.status(201).send({ membership: { id: membership.id, userId: membership.user_id, role: membership.role, schoolId: membership.school_id, competitionId: membership.competition_id } });
   });
 
   app.post("/members/:membershipId/revoke", async (request) => {

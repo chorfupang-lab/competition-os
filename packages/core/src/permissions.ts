@@ -107,3 +107,35 @@ export function permissionsFor(subject: PermissionSubject): Set<Permission> {
 export function hasPermission(subject: PermissionSubject, permission: Permission): boolean {
   return permissionsFor(subject).has(permission);
 }
+
+/**
+ * Permissions that make sense for a single competition. A membership scoped
+ * to one competition grants only these, and only for that competition.
+ * Tenant-wide powers (members, schools, tenant-wide students, audit log)
+ * always require an unscoped membership.
+ */
+export const COMPETITION_SCOPED_PERMISSIONS: readonly Permission[] = [
+  "competitions.manage",
+  "registrations.manage",
+  "payments.manage",
+  "analytics.read",
+  "certificates.manage",
+  "certificates.approve",
+  "notifications.manage",
+  "review.submit",
+  "review.approve",
+  "result.override",
+  "integrity.disqualify",
+  "ranking.read",
+];
+
+/** Roles that may be scoped to a single competition. */
+export const COMPETITION_SCOPABLE_ROLES: readonly TenantRole[] = ["competition_admin", "judge", "head_judge"];
+
+export function competitionPermissionsFor(subject: PermissionSubject & { competitionRoles: readonly TenantRole[] }): Set<Permission> {
+  const result = permissionsFor(subject);
+  for (const role of subject.competitionRoles) {
+    for (const p of TENANT_ROLE_PERMISSIONS[role]) if (COMPETITION_SCOPED_PERMISSIONS.includes(p)) result.add(p);
+  }
+  return result;
+}

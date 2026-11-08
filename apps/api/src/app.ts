@@ -8,6 +8,8 @@ import type { Config } from "./config.ts";
 import { SESSION_COOKIE, bearerToken } from "./lib/auth.ts";
 import { hashToken } from "./lib/crypto.ts";
 import { authRoutes } from "./routes/auth.ts";
+import { catalogRoutes } from "./routes/catalog.ts";
+import { competitionRoutes } from "./routes/competitions.ts";
 import { meRoutes } from "./routes/me.ts";
 import { platformRoutes } from "./routes/platform.ts";
 import { tenantRoutes } from "./routes/tenant.ts";
@@ -98,6 +100,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(meRoutes, { prefix: "/me" });
   await app.register(platformRoutes, { prefix: "/platform" });
   await app.register(tenantRoutes, { prefix: "/t/:tenantId" });
+  await app.register(competitionRoutes, { prefix: "/t/:tenantId/competitions" });
+  await app.register(catalogRoutes, { prefix: "/competitions" });
   return app;
 }
 

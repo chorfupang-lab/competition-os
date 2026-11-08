@@ -141,6 +141,72 @@ already on the roster, or repeated within the upload. They are never silently
 dropped or merged. A `dryRun` previews them. Without `confirmDuplicates`, the
 whole upload is refused with the list, so the admin decides.
 
+## Competition engine (stage 2)
+
+**Configuration as a versioned document.** A competition's rounds, groups
+and per-round-group rules live in one JSON configuration per version
+(`competition_versions.config`), validated by the Zod schema in
+`packages/core/src/competition/config.ts`. We chose this over one row per
+round, group and setting because:
+- a version is a single immutable snapshot, which is easy to lock, diff,
+  audit and roll forward;
+- the schema is shared with the future web app, so admins get the same
+  validation in the browser;
+- results will refer to a version id plus stable round and group ids, so
+  history stays exact.
+
+The trade-off is that cross-competition queries ("all rounds opening this
+week") need JSON queries. If such reporting grows, materialize a read model.
+
+**Stable ids.** Rounds and groups use client-generated UUIDs that never
+change across versions. Keys (`primary`, `final`) are for people and may be
+renamed.
+
+**Lifecycle.**
+- Competition status: draft → published → cancelled/archived.
+- Version status: draft → published → superseded.
+- At most one draft and one published version at a time (unique indexes).
+- A database trigger freezes published and superseded versions.
+- Fee mode, currency and timezone lock at the first publish (HR29).
+
+**Planned change vs emergency.** A new version is a planned change.
+Publishing it is refused if it would alter or remove a round that has
+already opened, or change the eligibility of a group in such a round. Those
+cases are live incidents and will go through audited emergency actions in
+stage 6 (HR8, HR9).
+
+**Engines are pure and deterministic** (`packages/core/src/competition`).
+- No I/O, no clock unless passed in, and no randomness.
+- Scores are rounded to 3 decimals.
+- Rankings break full ties by sharing the rank ("1, 2, 2, 4") and list tied
+  participants by id.
+- Top % rounds down.
+- Ties at a cut-off follow the rule's `ties` setting.
+- Manual overrides need a reason and are capped by `maxWildcards`.
+- Practice rounds cannot qualify anyone (HR20). AI is not involved (HR17,
+  HR18).
+
+**Grades** are normalized to a level (-2…12) so one rule can cover Hong Kong
+(P/S/F), mainland China (小/初/高), Thailand (อ./ป./ม.) and US-style grades.
+Unknown grades fail eligibility with `MISSING_GRADE` rather than being
+guessed.
+
+**Competition-scoped roles.** A membership may carry `competition_id`.
+- Scoped memberships grant only competition-level permissions
+  (`COMPETITION_SCOPED_PERMISSIONS`), and only for that competition.
+- Tenant-wide powers need an unscoped membership.
+- This is enforced in the API. RLS still enforces the tenant boundary
+  underneath.
+
+**Public catalog.**
+- RLS lets anyone read published `public` or `unlisted` competitions of
+  active tenants, plus only their current version.
+- The API returns a public projection (`publicConfigView`), which leaves out
+  content bank ids, scoring weights, qualification parameters and integrity
+  tuning.
+- Organizer names come from a narrow `SECURITY DEFINER` function, because
+  tenants themselves are not publicly readable.
+
 ## Decisions to revisit
 
 - **Schools are tenant-scoped in the MVP.** A school taking part with two

@@ -90,7 +90,7 @@ export async function createPlatformAdmin(env: TestEnv): Promise<Session> {
 export async function call(
   app: FastifyInstance,
   session: Session | null,
-  method: "GET" | "POST" | "PATCH",
+  method: "GET" | "POST" | "PATCH" | "PUT",
   url: string,
   payload?: unknown,
 ) {

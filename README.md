@@ -10,16 +10,25 @@ payments, judging, certificates and student Learning Passports.
 
 ## Status
 
-**Stage 1 of 11 is complete: Product foundation.** It covers the database,
-login, tenants, roles, permissions, tenant isolation, schools and rosters,
-parents and children, and the audit log. This is a backend API only; the web
-portals come later. See the roadmap for what each stage adds.
+**Stages 1–2 of 11 are complete.**
+- Stage 1, product foundation: database, login, tenants, roles and
+  permissions, tenant isolation, schools and rosters, parents and children,
+  and the audit log.
+- Stage 2, competition engine: competitions, versioned configurations,
+  rounds and groups with per-round-group rules, eligibility, attempt policy,
+  scoring, ranking, qualification, competition-scoped roles, and the public
+  catalog.
+
+This is a backend API only; the web portals come later. See the roadmap for
+what each stage adds.
 
 ## Repository layout
 
 ```
 apps/api          HTTP API (Fastify). Routes, authorization, integration tests.
-packages/core     Shared rules with no I/O: roles, permissions, locales, error codes.
+packages/core     Shared rules with no I/O: roles, permissions, locales, error codes,
+                  and the competition engine (config schema, eligibility, scoring,
+                  ranking, qualification, validation).
 packages/db       PostgreSQL schema (SQL migrations with row-level security),
                   typed query layer (Kysely), migration runner, admin scripts.
 infra/            Local infrastructure config.
@@ -53,7 +62,7 @@ enforced by the database and must be tested there. The test setup creates and
 drops its own database. It connects with `TEST_DATABASE_ADMIN_URL`, which
 defaults to the docker-compose superuser.
 
-## API overview (stage 1)
+## API overview
 
 All responses are JSON. Errors look like
 `{"error": {"code": "FORBIDDEN", "message": "<localized>", "details": ...}}`.
@@ -80,3 +89,12 @@ that change data, the `Origin` must be in `ALLOWED_ORIGINS`.
 | `GET/POST /t/:tenantId/schools/:id/students` | Competition Admin, that school's School Admin | Roster and bulk upload (up to 500, with duplicate review) |
 | `GET /t/:tenantId/students`, `GET .../students/:id` | Competition Admin (School Admin: own school's students) | Students connected to this tenant |
 | `GET /t/:tenantId/audit-logs` | Competition Admin | Tenant audit log |
+| `GET/POST /t/:tenantId/competitions` | Competition Admin (scoped admins list their own) | List and create competitions (starts as draft v1) |
+| `GET/PATCH /t/:tenantId/competitions/:id`, `POST .../cancel` | Competition Admin of that competition | Details, edit, cancel (reason required) |
+| `POST .../competitions/:id/versions` | same | New draft from the published version |
+| `GET .../versions/:vid`, `PUT .../versions/:vid/config` | same | Read or save a draft config (send `revision`), with validation issues |
+| `POST .../versions/:vid/publish` | same | Publish; blocked by errors; change note required from v2 |
+| `POST .../versions/:vid/simulate` | same, or `ranking.read` | Dry-run ranking and qualification on sample scores |
+| `POST .../competitions/:id/eligibility` | Competition or registration admin | Group eligibility for a student, or a date of birth and grade |
+| `GET /competitions`, `GET /competitions/:id` | anyone | Public catalog of published competitions |
+| `GET /me/children/:id/eligibility/:competitionId?grade=P4` | parent | Which groups a child may enter |

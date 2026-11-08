@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { sql } from "kysely";
 import { z } from "zod";
-import { AppError } from "@cos/core";
+import { AppError, eligibleGroups, type CompetitionConfig } from "@cos/core";
 import { ANONYMOUS, withContext, type DbContext } from "@cos/db";
 import { audit } from "../lib/audit.ts";
 import { requireAuth, type AuthInfo } from "../lib/auth.ts";
@@ -42,7 +42,7 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
       const memberships = await tx
         .selectFrom("tenant_memberships as m")
         .innerJoin("tenants as t", "t.id", "m.tenant_id")
-        .select(["m.id", "m.role", "m.school_id", "t.id as tenant_id", "t.slug", "t.name", "t.status as tenant_status"])
+        .select(["m.id", "m.role", "m.school_id", "m.competition_id", "t.id as tenant_id", "t.slug", "t.name", "t.status as tenant_status"])
         .where("m.user_id", "=", auth.userId)
         .where("m.status", "=", "active")
         .orderBy("t.name")
@@ -72,6 +72,7 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
           id: m.id,
           role: m.role,
           schoolId: m.school_id,
+          competitionId: m.competition_id,
           tenant: { id: m.tenant_id, slug: m.slug, name: m.name, status: m.tenant_status },
         })),
         children: children.map((c) => ({ ...presentStudent(c), relationship: c.relationship })),
@@ -177,5 +178,40 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
       return { userId };
     });
     return reply.status(201).send({ userId: result.userId, username: body.username });
+  });
+
+  /**
+   * Parent flow step: which groups of a published competition this child is
+   * eligible for. The parent declares the child's current grade.
+   */
+  app.get("/children/:studentId/eligibility/:competitionId", async (request) => {
+    const auth = requireAuth(request);
+    const { studentId, competitionId } = parse(z.object({ studentId: zUuid, competitionId: zUuid }), request.params);
+    const { grade } = parse(z.object({ grade: z.string().trim().max(40).optional() }), request.query);
+    return withContext(db, personal(auth), async (tx) => {
+      const child = await tx
+        .selectFrom("parent_children as pc")
+        .innerJoin("students", "students.id", "pc.student_id")
+        .select(["students.id", "students.date_of_birth"])
+        .where("pc.parent_user_id", "=", auth.userId)
+        .where("pc.student_id", "=", studentId)
+        .executeTakeFirst();
+      if (!child) throw new AppError("NOT_FOUND", { field: "studentId" });
+      // RLS: only published public/unlisted competitions are visible here.
+      const competition = await tx
+        .selectFrom("competitions as c")
+        .innerJoin("competition_versions as v", "v.id", "c.current_version_id")
+        .select(["c.id", "v.id as version_id", "v.config"])
+        .where("c.id", "=", competitionId)
+        .where("c.status", "=", "published")
+        .executeTakeFirst();
+      if (!competition) throw new AppError("NOT_FOUND", { field: "competitionId" });
+      return {
+        studentId,
+        competitionId,
+        versionId: competition.version_id,
+        groups: eligibleGroups(competition.config as CompetitionConfig, { dateOfBirth: child.date_of_birth, grade }),
+      };
+    });
   });
 }

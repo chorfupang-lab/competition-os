@@ -49,3 +49,15 @@ describe("locales", () => {
     expect(negotiateLocale(undefined)).toBeNull();
   });
 });
+
+describe("competition-scoped permissions", () => {
+  it("a competition-scoped admin gets only competition permissions", async () => {
+    const { competitionPermissionsFor } = await import("./index.ts");
+    const perms = competitionPermissionsFor({ platformAdmin: false, tenantRoles: [], competitionRoles: ["competition_admin"] });
+    expect(perms.has("competitions.manage")).toBe(true);
+    expect(perms.has("members.manage")).toBe(false);
+    expect(perms.has("students.read")).toBe(false);
+    const hj = competitionPermissionsFor({ platformAdmin: false, tenantRoles: [], competitionRoles: ["head_judge"] });
+    expect(hj.has("result.override")).toBe(true);
+  });
+});
