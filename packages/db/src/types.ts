@@ -531,6 +531,100 @@ export interface ConsentRecordsTable {
   created_at: Timestamp;
 }
 
+export interface AttemptsTable {
+  id: string;
+  tenant_id: string;
+  competition_id: string;
+  competition_version_id: string;
+  round_id: string;
+  group_id: string;
+  registration_id: string;
+  student_id: string;
+  started_by_user_id: string;
+  attempt_number: number;
+  kind: "official" | "practice";
+  status: "in_progress" | "paused" | "submitted" | "invalidated";
+  content_version_id: string;
+  content_locale: string;
+  seed: string;
+  question_set: Json;
+  started_at: ColumnType<Date, Date | string, Date | string>;
+  deadline_at: ColumnType<Date, Date | string, Date | string>;
+  extension_seconds: Generated<number>;
+  submitted_at: NullableTimestamp;
+  submit_reason: "participant" | "time_up" | "integrity_policy" | "admin" | null;
+  score: Json | null;
+  score_status: Generated<"not_scored" | "scored" | "pending_ai" | "pending_manual">;
+  risk_score: Generated<number>;
+  invalidated_at: NullableTimestamp;
+  invalidated_reason: string | null;
+  makeup_of: string | null;
+  last_activity_at: ColumnType<Date, Date | string, Date | string>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface AttemptSessionsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  attempt_id: string;
+  device_id: string;
+  fingerprint_hash: string | null;
+  ip: string | null;
+  user_agent: string | null;
+  status: Generated<"active" | "superseded" | "closed">;
+  started_at: Timestamp;
+  last_seen_at: Timestamp;
+}
+
+export interface AttemptAnswersTable {
+  tenant_id: string;
+  attempt_id: string;
+  item_id: string;
+  response: Json | null;
+  client_seq: number;
+  client_saved_at: NullableTimestamp;
+  saved_at: ColumnType<Date, Date | string, Date | string>;
+  time_spent_ms: Generated<number>;
+  change_count: Generated<number>;
+  late_sync: Generated<boolean>;
+  grade: Json | null;
+}
+
+export interface IntegrityEventsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  attempt_id: string;
+  session_id: string | null;
+  source: "client" | "server";
+  type: string;
+  details: Json;
+  client_time: NullableTimestamp;
+  server_time: Timestamp;
+}
+
+export interface RiskCasesTable {
+  id: Generated<string>;
+  tenant_id: string;
+  attempt_id: string;
+  status: Generated<"flagged" | "under_review" | "cleared" | "warning" | "disqualified">;
+  risk_score: number;
+  signals: Json;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface AttemptGrantsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  registration_id: string;
+  round_id: string;
+  replaces_attempt_id: string | null;
+  reason: string;
+  granted_by: string | null;
+  created_at: Timestamp;
+}
+
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
@@ -566,6 +660,12 @@ export interface Database {
   webhook_events: WebhookEventsTable;
   gateway_transactions: GatewayTransactionsTable;
   consent_records: ConsentRecordsTable;
+  attempts: AttemptsTable;
+  attempt_sessions: AttemptSessionsTable;
+  attempt_answers: AttemptAnswersTable;
+  integrity_events: IntegrityEventsTable;
+  risk_cases: RiskCasesTable;
+  attempt_grants: AttemptGrantsTable;
 }
 
 export type Tenant = Selectable<TenantsTable>;
@@ -585,3 +685,5 @@ export type Order = Selectable<OrdersTable>;
 export type Registration = Selectable<RegistrationsTable>;
 export type Payment = Selectable<PaymentsTable>;
 export type Refund = Selectable<RefundsTable>;
+export type Attempt = Selectable<AttemptsTable>;
+export type AttemptSession = Selectable<AttemptSessionsTable>;

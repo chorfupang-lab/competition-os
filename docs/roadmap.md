@@ -6,8 +6,8 @@
 | 2 | **Competition engine**: competitions, config versions, rounds, groups, per-round-group rules, eligibility, attempt policy, scoring, ranking, qualification | ✅ Done |
 | 3 | **Content engine**: content banks and versions, items, translations, skills, learning objectives, media, difficulty, Excel import | ✅ Done |
 | 4 | **Registration and payment**: parent/school registration, pricing, offer codes, tax, Airwallex hosted checkout, webhooks, receipts, refunds, reconciliation | ✅ Done (Airwallex sandbox check pending) |
-| 5 | Competition runtime: server timer, autosave/resume, devices/sessions, anti-cheat signals | Next |
-| 6 | Judging and results: review cases, Head Judge approval/override, emergency actions, result versions, recalculation, publication | |
+| 5 | **Competition runtime**: server timer, autosave/resume, devices/sessions, anti-cheat signals | ✅ Done |
+| 6 | Judging and results: review cases, Head Judge approval/override, emergency actions, result versions, recalculation, publication | Next |
 | 7 | Learning Passport and AI: skills over time, pronunciation AI adapter, AI job queue, output validation, practice sets | |
 | 8 | Certificates and notifications | |
 | 9 | SaaS commercial layer: plans, limits, subscriptions, platform fees, AI cost | |
@@ -149,6 +149,38 @@ stages 2–4, once there are flows worth putting on screen.
   the text agreed.
 - 183 tests in total.
 
+## Stage 5 — what is in place
+
+- Attempts follow the round's attempt policy, with make-up grants.
+  Practice rounds produce `practice` attempts, which never feed official
+  results.
+- Question selection is deterministic per attempt (seeded): a fixed set or a
+  random pool, with question and option order randomized as configured.
+  Parts that would reveal the answer are always shuffled. Participants
+  receive questions with answers removed, in their content language.
+- Server-authoritative deadline (capped at the round close), network grace,
+  offline-sync grace flagged `late_sync`, and auto-submit on access or by
+  the worker.
+- Autosave in batches with per-question sequence numbers (older syncs never
+  overwrite newer answers), and resume after refresh or reconnect.
+- Device limit per round-group (1, 2 or unlimited). Device switches and
+  concurrent sessions are recorded, and the older session is superseded.
+  Shared devices across students, IP changes and connection gaps are
+  recorded.
+- Browser signals are accepted and the fullscreen policy enforced: warn,
+  pause (questions hidden, timer running) or auto-submit. Copy/paste
+  follows allow / block / flag.
+- Server checks on submit: impossible speed, one-position answering, and
+  wrong answers shared with another student.
+- A deterministic risk score opens a `flagged` risk case at 30 or more.
+  There is never an automatic penalty.
+- Scoring on submit uses the stage 2 rules and stage 3 grading. Scores are
+  provisional, with pronunciation and custom items left pending.
+- Reviewer views: attempt list with risk, and a full attempt timeline.
+- Background worker (`pnpm worker`): auto-submit and seat-hold sweep,
+  safe to run in parallel.
+- 209 tests in total.
+
 ## Known gaps carried forward
 
 - Email verification, password reset, invitations: stage 8 (notifications).
@@ -156,9 +188,13 @@ stages 2–4, once there are flows worth putting on screen.
   events already exist in the audit log.
 - Receipts are HTML. PDF receipts with embedded CJK and Thai fonts come with
   the certificate engine (stage 8), which uses the same renderer approach.
-- Hold expiry and waitlist promotion run whenever a registration or admin
-  listing touches the competition. A scheduled sweep arrives with the job
-  queue (stage 5).
+- Qualified-entry rounds (finals) open to participants once qualification
+  results are published (stage 6).
+- Time extensions, invalidation and make-up grants are supported by the
+  runtime. Their audited admin actions come with emergency overrides
+  (stage 6).
+- Pronunciation recordings: upload, the AI queue and scoring are stage 7.
+  Until then, pronunciation items leave the attempt `pending_ai`.
 - Claiming an existing student (a parent linking to a school-created
   identity) needs a verified pending-link workflow; scheduled for stage 10
   with data governance.

@@ -10,7 +10,7 @@ payments, judging, certificates and student Learning Passports.
 
 ## Status
 
-**Stages 1–4 of 11 are complete.**
+**Stages 1–5 of 11 are complete.**
 - Stage 1, product foundation: database, login, tenants, roles and
   permissions, tenant isolation, schools and rosters, parents and children,
   and the audit log.
@@ -27,6 +27,11 @@ payments, judging, certificates and student Learning Passports.
   offer codes, hosted checkout through a provider adapter (Airwallex plus a
   test gateway), signed idempotent webhooks, receipts and invoices, refunds,
   reconciliation and tenant economics. See [docs/payments.md](docs/payments.md).
+- Stage 5, competition runtime: server-authoritative timer, per-attempt
+  question selection, autosave with offline sync and resume, device and
+  session control, browser and server integrity signals, risk scoring and
+  flagged cases, auto-submit, and a background worker. See
+  [docs/runtime.md](docs/runtime.md).
 
 This is a backend API only; the web portals come later. See the roadmap for
 what each stage adds.
@@ -56,6 +61,7 @@ cp .env.example .env                 # then load it: set -a; source .env; set +a
 pnpm db:migrate
 pnpm db:create-platform-admin --email you@example.com --name "Your Name"
 pnpm dev                             # API on http://localhost:3000
+pnpm worker                          # background worker (auto-submit, seat-hold sweep)
 ```
 
 The admin script prints a generated password once if you don't pass `--password`.
@@ -131,3 +137,7 @@ that change data, the `Origin` must be in `ALLOWED_ORIGINS`.
 | `POST /t/:tenantId/payments/gateway-transactions` (+ `/sync`), `GET .../reconciliation`, `GET .../summary` | `payments.manage` | Reconciliation and tenant net |
 | `POST /platform/tenants/:id/payment-accounts`, `POST .../platform-fee` | Platform Admin | Connect the tenant's merchant account; platform fee |
 | `POST /webhooks/payments/:provider` | the gateway | Signed payment and refund events |
+| `GET /me/rounds` | student / parent | Rounds with state and attempts left |
+| `POST /me/attempts`, `GET /me/attempts/:id` | student / parent | Start or resume (device + session); full state |
+| `PUT /me/attempts/:id/answers`, `POST .../heartbeat`, `.../events`, `.../resume`, `.../submit` | student / parent | Autosave, keep-alive, integrity signals, resume after pause, submit |
+| `GET /t/:tenantId/competitions/:id/attempts`, `GET /t/:tenantId/attempts/:attemptId` | Judge / Competition Admin | Attempts with risk; full review view (questions as shown, answers, grades, sessions, signals) |

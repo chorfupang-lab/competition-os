@@ -18,9 +18,14 @@ given (e.g. HR16).
 | Tests | Vitest against real PostgreSQL | Isolation is enforced in the DB, so it must be tested there |
 | Local infra | Docker Compose | Cloud-neutral; production can be AWS, GCP, Azure or managed Postgres |
 
+Background work runs in a worker process (`apps/api/src/worker.ts`) that
+uses PostgreSQL only: it finds due work with `SECURITY DEFINER` lookups and
+locks rows with `FOR UPDATE SKIP LOCKED`. **Decision:** no Redis for now.
+Postgres-backed work is transactional with the data it changes, and one less
+service to run. Revisit if job volume (AI, notifications) outgrows it.
+
 Planned for later stages, not yet in the repo: a Next.js web app for the
-portals, a Redis/BullMQ job queue (AI, certificates, notifications, webhooks,
-recalculation), and S3-compatible object storage.
+portals, and S3-compatible object storage.
 
 ## Multi-tenancy and isolation
 
@@ -306,12 +311,35 @@ is made while a transaction is open.
 These cover the requirement's payment states (Pending / Paid / Failed /
 Refunded / Cancelled) at the order level.
 
+## Competition runtime (stage 5)
+
+See [runtime.md](runtime.md) for the client contract.
+
+**Authorization pattern.** A participant (the student, or a parent for a
+young child) is first authorized in their personal context. RLS lets them
+see only their own or their children's attempts and registrations. The
+runtime then acts inside that competition's tenant, as the participant, to
+read content snapshots and write answers, sessions and signals. It never
+gains wider reach than that one tenant.
+
+**Determinism and audit.** Each attempt stores its seed, question set,
+content version and competition version. Grading and scoring are pure
+functions of those plus the saved answers. So an attempt can be re-scored
+exactly (stage 6 recalculation) or reconstructed for an appeal.
+
+**Signals are not verdicts** (HR19). Signals are stored as
+`integrity_events`, and the score in `risk_cases`. A case starts `flagged`;
+judges move it through review in stage 6.
+
 ## Decisions to revisit
 
 - **Schools are tenant-scoped in the MVP.** A school taking part with two
   organizers has a school record in each. The same school-admin login can
   hold memberships in both. A platform-level school directory can be added
   later without breaking this.
+- **Fullscreen "pause" keeps the timer running.** Pausing hides the
+  questions until fullscreen returns, so leaving fullscreen never buys
+  extra time. Extensions are an explicit Head Judge action instead.
 - **Private competitions are school/admin-only.** Parents register for
   public or unlisted competitions. Unlisted plus "requires invite code" is
   the invite-only option.
