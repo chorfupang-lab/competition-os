@@ -10,7 +10,7 @@ payments, judging, certificates and student Learning Passports.
 
 ## Status
 
-**Stages 1–3 of 11 are complete.**
+**Stages 1–4 of 11 are complete.**
 - Stage 1, product foundation: database, login, tenants, roles and
   permissions, tenant isolation, schools and rosters, parents and children,
   and the audit log.
@@ -22,6 +22,11 @@ payments, judging, certificates and student Learning Passports.
   objectives, all 13 question types with answer checking, translations kept
   separate from questions, the Excel template and import, and immutable
   published Content Bank Versions that competitions reference.
+- Stage 4, registration and payment: parent and school registration,
+  eligibility, consent, capacity and waitlist, duplicate flags, prices, tax,
+  offer codes, hosted checkout through a provider adapter (Airwallex plus a
+  test gateway), signed idempotent webhooks, receipts and invoices, refunds,
+  reconciliation and tenant economics. See [docs/payments.md](docs/payments.md).
 
 This is a backend API only; the web portals come later. See the roadmap for
 what each stage adds.
@@ -113,3 +118,16 @@ that change data, the `Origin` must be in `ALLOWED_ORIGINS`.
 | `GET .../banks/:id/import-template` | same | Download the Excel template |
 | `POST .../banks/:id/imports` (raw .xlsx), `GET .../imports/:importId`, `POST .../commit` | same | Validate → preview / error report → commit |
 | `POST .../banks/:id/versions`, `GET .../versions/:versionId/items` | same | Publish an immutable Content Bank Version; read it |
+| `POST /me/registrations/quote`, `POST /me/registrations` | parent | Eligibility, price, seat; register (consent, offer code) and open checkout |
+| `GET /me/registrations`, `POST /me/registrations/:id/cancel` | parent | List; withdraw unpaid or waitlisted |
+| `GET /me/orders`, `GET /me/orders/:id`, `POST .../checkout`, `GET .../receipt` | parent | Orders, retry checkout, HTML receipt |
+| `PATCH /t/:tenantId/competitions/:id/registration-settings` | Competition Admin | Window, waitlist, consent text/version, invite-only, tax, hold time |
+| `GET/POST .../competitions/:id/prices`, `POST .../prices/:pid/archive` | Competition Admin | Prices per group, with optional early-bird windows |
+| `GET/POST /t/:tenantId/tax-rates`, `GET/POST /t/:tenantId/offer-codes` | `payments.manage` | Tax rates; offer codes (promotion, scholarship, invite, trial) |
+| `GET .../competitions/:id/registrations` | `registrations.manage` | Registrations and per-group counts (`attention=true` for flagged) |
+| `POST /t/:tenantId/registrations/:id/cancel`, `change-group`, `transfer`, `duplicate` | `registrations.manage` | Cancel, amend, transfer, resolve duplicate flags (reasons required) |
+| `POST .../competitions/:id/school-registrations` | School Admin (own school) | Bulk registration from the roster; `dryRun` preview; invoice or online |
+| `GET /t/:tenantId/orders`, `GET .../orders/:id`, `POST .../refunds`, `POST .../mark-paid`, `GET .../receipt` | `payments.manage` | Search, detail with economics, refund, record invoice payment |
+| `POST /t/:tenantId/payments/gateway-transactions` (+ `/sync`), `GET .../reconciliation`, `GET .../summary` | `payments.manage` | Reconciliation and tenant net |
+| `POST /platform/tenants/:id/payment-accounts`, `POST .../platform-fee` | Platform Admin | Connect the tenant's merchant account; platform fee |
+| `POST /webhooks/payments/:provider` | the gateway | Signed payment and refund events |

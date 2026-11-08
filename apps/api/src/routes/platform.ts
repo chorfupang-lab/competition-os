@@ -105,4 +105,34 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
     });
     return { auditLogs: logs.map(presentAudit) };
   });
+
+  /** Connect the tenant's merchant account at a payment provider (the tenant is the merchant). */
+  app.post("/tenants/:tenantId/payment-accounts", async (request, reply) => {
+    const auth = requirePlatformAdmin(request);
+    const { tenantId } = parse(z.object({ tenantId: zUuid }), request.params);
+    const body = parse(z.object({ provider: z.enum(["airwallex", "test"]), externalAccountId: z.string().trim().min(1).max(200) }), request.body);
+    const account = await withContext(db, platform(auth), async (tx) => {
+      const t = await tx.selectFrom("tenants").select("id").where("id", "=", tenantId).executeTakeFirst();
+      if (!t) throw new AppError("NOT_FOUND");
+      const previous = await tx.updateTable("tenant_payment_accounts").set({ status: "disabled" }).where("tenant_id", "=", tenantId).where("status", "=", "active").returning(["id", "provider", "external_account_id"]).execute();
+      const a = await tx.insertInto("tenant_payment_accounts").values({ tenant_id: tenantId, provider: body.provider, external_account_id: body.externalAccountId, created_by: auth.userId }).returningAll().executeTakeFirstOrThrow();
+      await audit(tx, request, { tenantId, actorUserId: auth.userId, action: "payment_account.connected", targetType: "tenant", targetId: tenantId, before: previous, after: body });
+      return a;
+    });
+    return reply.status(201).send({ account: { id: account.id, provider: account.provider, externalAccountId: account.external_account_id, status: account.status } });
+  });
+
+  /** The platform's fee on each order, in basis points (until SaaS plans arrive in stage 9). */
+  app.post("/tenants/:tenantId/platform-fee", async (request) => {
+    const auth = requirePlatformAdmin(request);
+    const { tenantId } = parse(z.object({ tenantId: zUuid }), request.params);
+    const body = parse(z.object({ bps: z.number().int().min(0).max(10_000), reason: zReason }), request.body);
+    await withContext(db, platform(auth), async (tx) => {
+      const before = await tx.selectFrom("tenants").select("platform_fee_bps").where("id", "=", tenantId).executeTakeFirst();
+      if (!before) throw new AppError("NOT_FOUND");
+      await tx.updateTable("tenants").set({ platform_fee_bps: body.bps }).where("id", "=", tenantId).execute();
+      await audit(tx, request, { tenantId, actorUserId: auth.userId, action: "tenant.platform_fee_changed", targetType: "tenant", targetId: tenantId, reason: body.reason, before: { bps: before.platform_fee_bps }, after: { bps: body.bps } });
+    });
+    return { ok: true };
+  });
 }

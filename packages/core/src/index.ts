@@ -4,3 +4,4 @@ export * from "./locales.ts";
 export * from "./errors.ts";
 export * from "./competition/index.ts";
 export * from "./content/index.ts";
+export * from "./commerce/index.ts";

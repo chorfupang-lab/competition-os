@@ -17,6 +17,7 @@ export interface TenantsTable {
   name: string;
   name_i18n: Json;
   status: Generated<"active" | "suspended" | "disabled">;
+  platform_fee_bps: Generated<number>;
   default_locale: Generated<string>;
   timezone: Generated<string>;
   country_code: string | null;
@@ -152,6 +153,15 @@ export interface CompetitionsTable {
   updated_at: Timestamp;
   first_published_at: NullableTimestamp;
   cancelled_at: NullableTimestamp;
+  registration_opens_at: NullableTimestamp;
+  registration_closes_at: NullableTimestamp;
+  waitlist_enabled: Generated<boolean>;
+  consent_required: Generated<boolean>;
+  requires_invite_code: Generated<boolean>;
+  consent_version: Generated<string>;
+  consent_text_i18n: ColumnType<unknown, string | undefined, string>;
+  tax_rate_id: string | null;
+  payment_hold_minutes: Generated<number>;
 }
 
 export interface CompetitionVersionsTable {
@@ -308,6 +318,219 @@ export interface ContentImportsTable {
   committed_at: NullableTimestamp;
 }
 
+type Money = ColumnType<string, number | bigint | string, number | bigint | string>;
+
+export interface TenantPaymentAccountsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  provider: "airwallex" | "test";
+  external_account_id: string;
+  status: Generated<"active" | "disabled">;
+  created_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface TaxRatesTable {
+  id: Generated<string>;
+  tenant_id: string;
+  name: string;
+  rate_bps: number;
+  inclusive: boolean;
+  status: Generated<"active" | "archived">;
+  created_at: Timestamp;
+}
+
+export interface CompetitionPricesTable {
+  id: Generated<string>;
+  tenant_id: string;
+  competition_id: string;
+  group_id: string | null;
+  label: Generated<string>;
+  amount_minor: Money;
+  starts_at: NullableTimestamp;
+  ends_at: NullableTimestamp;
+  status: Generated<"active" | "archived">;
+  created_by: string | null;
+  created_at: Timestamp;
+}
+
+export interface OfferCodesTable {
+  id: Generated<string>;
+  tenant_id: string;
+  competition_id: string | null;
+  code: string;
+  kind: "percent" | "fixed";
+  percent_bps: number | null;
+  amount_minor: ColumnType<string | null, number | bigint | string | null, number | bigint | string | null>;
+  purpose: Generated<"promotion" | "scholarship" | "invite" | "trial">;
+  valid_from: NullableTimestamp;
+  valid_until: NullableTimestamp;
+  max_uses: number | null;
+  max_uses_per_user: number | null;
+  status: Generated<"active" | "disabled">;
+  created_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface OrdersTable {
+  id: string;
+  tenant_id: string;
+  order_number: string;
+  competition_id: string;
+  kind: "parent" | "school";
+  buyer_user_id: string;
+  school_id: string | null;
+  status: "pending" | "paid" | "failed" | "cancelled" | "refunded" | "partially_refunded";
+  payment_method: "online" | "invoice" | "none";
+  currency: string;
+  subtotal_minor: Money;
+  discount_minor: Money;
+  tax_minor: Money;
+  total_minor: Money;
+  refunded_minor: ColumnType<string, number | bigint | string | undefined, number | bigint | string>;
+  tax_rate_bps: number | null;
+  tax_inclusive: boolean | null;
+  offer_code_id: string | null;
+  platform_fee_bps: Generated<number>;
+  platform_fee_minor: ColumnType<string, number | bigint | string | undefined, number | bigint | string>;
+  invoice_due_at: NullableTimestamp;
+  external_reference: string | null;
+  expires_at: NullableTimestamp;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  paid_at: NullableTimestamp;
+  cancelled_at: NullableTimestamp;
+}
+
+export interface RegistrationsTable {
+  id: string;
+  tenant_id: string;
+  competition_id: string;
+  competition_version_id: string;
+  group_id: string;
+  student_id: string;
+  registered_by_user_id: string;
+  channel: "parent" | "school" | "admin";
+  school_id: string | null;
+  content_locale: string;
+  declared_grade: string | null;
+  status: "pending_payment" | "confirmed" | "waitlisted" | "cancelled";
+  hold_expires_at: NullableTimestamp;
+  waitlisted_at: NullableTimestamp;
+  order_id: string | null;
+  eligibility: Json;
+  possible_duplicate_of: string | null;
+  duplicate_resolution: "not_duplicate" | "cancelled" | null;
+  needs_attention: string | null;
+  cancel_reason: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  confirmed_at: NullableTimestamp;
+  cancelled_at: NullableTimestamp;
+}
+
+export interface OrderLinesTable {
+  id: Generated<string>;
+  tenant_id: string;
+  order_id: string;
+  registration_id: string;
+  description: string;
+  unit_amount_minor: Money;
+  discount_minor: Money;
+  tax_minor: Money;
+  total_minor: Money;
+  refunded_minor: ColumnType<string, number | bigint | string | undefined, number | bigint | string>;
+}
+
+export interface OfferCodeRedemptionsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  offer_code_id: string;
+  order_id: string;
+  user_id: string;
+  uses: number;
+  status: Generated<"active" | "released">;
+  created_at: Timestamp;
+}
+
+export interface PaymentsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  order_id: string;
+  provider: "airwallex" | "test";
+  provider_payment_id: string;
+  status: "pending" | "succeeded" | "failed" | "cancelled";
+  amount_minor: Money;
+  currency: string;
+  gateway_fee_minor: ColumnType<string | null, number | bigint | string | null | undefined, number | bigint | string | null>;
+  checkout: Json;
+  failure_code: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  succeeded_at: NullableTimestamp;
+}
+
+export interface RefundsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  order_id: string;
+  payment_id: string | null;
+  amount_minor: Money;
+  currency: string;
+  reason: string;
+  status: "pending" | "succeeded" | "failed";
+  provider_refund_id: string | null;
+  registration_ids: string[];
+  requested_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  completed_at: NullableTimestamp;
+}
+
+export interface WebhookEventsTable {
+  id: Generated<string>;
+  provider: string;
+  event_id: string;
+  event_type: string;
+  tenant_id: string | null;
+  payload: Json;
+  received_at: Timestamp;
+  processed_at: NullableTimestamp;
+  processing_error: string | null;
+}
+
+export interface GatewayTransactionsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  provider: string;
+  provider_txn_id: string;
+  kind: "payment" | "refund";
+  provider_ref: string;
+  amount_minor: Money;
+  fee_minor: Money;
+  currency: string;
+  settled_at: Timestamp;
+  imported_by: string | null;
+  imported_at: Timestamp;
+}
+
+export interface ConsentRecordsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  competition_id: string;
+  student_id: string;
+  given_by_user_id: string;
+  consent_type: "parent" | "school_attestation";
+  consent_version: string;
+  consent_text_hash: string;
+  granted: boolean;
+  ip: string | null;
+  user_agent: string | null;
+  created_at: Timestamp;
+}
+
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
@@ -330,6 +553,19 @@ export interface Database {
   content_bank_versions: ContentBankVersionsTable;
   content_version_items: ContentVersionItemsTable;
   content_imports: ContentImportsTable;
+  tenant_payment_accounts: TenantPaymentAccountsTable;
+  tax_rates: TaxRatesTable;
+  competition_prices: CompetitionPricesTable;
+  offer_codes: OfferCodesTable;
+  orders: OrdersTable;
+  registrations: RegistrationsTable;
+  order_lines: OrderLinesTable;
+  offer_code_redemptions: OfferCodeRedemptionsTable;
+  payments: PaymentsTable;
+  refunds: RefundsTable;
+  webhook_events: WebhookEventsTable;
+  gateway_transactions: GatewayTransactionsTable;
+  consent_records: ConsentRecordsTable;
 }
 
 export type Tenant = Selectable<TenantsTable>;
@@ -345,3 +581,7 @@ export type CompetitionVersion = Selectable<CompetitionVersionsTable>;
 export type ContentBank = Selectable<ContentBanksTable>;
 export type ContentItem = Selectable<ContentItemsTable>;
 export type ContentItemTranslation = Selectable<ContentItemTranslationsTable>;
+export type Order = Selectable<OrdersTable>;
+export type Registration = Selectable<RegistrationsTable>;
+export type Payment = Selectable<PaymentsTable>;
+export type Refund = Selectable<RefundsTable>;

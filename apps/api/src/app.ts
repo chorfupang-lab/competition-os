@@ -11,6 +11,10 @@ import { authRoutes } from "./routes/auth.ts";
 import { catalogRoutes } from "./routes/catalog.ts";
 import { competitionRoutes } from "./routes/competitions.ts";
 import { contentRoutes } from "./routes/content.ts";
+import { adminRegistrationRoutes } from "./routes/registrations-admin.ts";
+import { meRegistrationRoutes } from "./routes/registrations-me.ts";
+import { webhookRoutes } from "./routes/webhooks.ts";
+import { createProviders, type PaymentProviders } from "./payments/index.ts";
 import { meRoutes } from "./routes/me.ts";
 import { platformRoutes } from "./routes/platform.ts";
 import { tenantRoutes } from "./routes/tenant.ts";
@@ -18,6 +22,7 @@ import { tenantRoutes } from "./routes/tenant.ts";
 export interface AppDeps {
   config: Config;
   db: DB;
+  providers: PaymentProviders;
 }
 
 declare module "fastify" {
@@ -31,7 +36,8 @@ declare module "fastify" {
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
-export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
+export async function buildApp(input: Omit<AppDeps, "providers"> & { providers?: PaymentProviders }): Promise<FastifyInstance> {
+  const deps: AppDeps = { ...input, providers: input.providers ?? createProviders(input.config) };
   const app = Fastify({
     logger: deps.config.logger
       ? { redact: ["req.headers.authorization", "req.headers.cookie", 'res.headers["set-cookie"]'] }
@@ -103,6 +109,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(tenantRoutes, { prefix: "/t/:tenantId" });
   await app.register(competitionRoutes, { prefix: "/t/:tenantId/competitions" });
   await app.register(contentRoutes, { prefix: "/t/:tenantId/content" });
+  await app.register(adminRegistrationRoutes, { prefix: "/t/:tenantId" });
+  await app.register(meRegistrationRoutes, { prefix: "/me" });
+  await app.register(webhookRoutes, { prefix: "/webhooks" });
   await app.register(catalogRoutes, { prefix: "/competitions" });
   return app;
 }

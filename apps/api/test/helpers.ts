@@ -6,6 +6,7 @@ import { createDb, type DB } from "@cos/db";
 import { buildApp } from "../src/app.ts";
 import type { Config } from "../src/config.ts";
 import { hashPassword } from "../src/lib/crypto.ts";
+import { TestPaymentProvider } from "../src/payments/index.ts";
 
 export const ORIGIN = "http://app.test";
 export const PASSWORD = "correct-horse-battery";
@@ -20,6 +21,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     cookieSecure: false,
     rateLimit: { enabled: false, globalPerMinute: 1000, authPerMinute: 1000 },
     logger: false,
+    payments: { appUrl: "http://app.test", testProvider: { webhookSecret: "whsec_test" }, airwallex: null },
     ...overrides,
   };
 }
@@ -29,6 +31,8 @@ export interface TestEnv {
   db: DB;
   /** Owner connection: bypasses RLS. Used only to arrange fixtures and to inspect. */
   owner: pg.Pool;
+  /** The test payment gateway (Airwallex-compatible webhooks). */
+  pay: TestPaymentProvider;
 }
 
 /** One app per test file, with its own pools; closed after the file. */
@@ -37,7 +41,8 @@ export function useTestEnv(overrides: Partial<Config> = {}): TestEnv {
   beforeAll(async () => {
     env.db = createDb(inject("appUrl"), { max: 5 });
     env.owner = new pg.Pool({ connectionString: inject("ownerUrl"), max: 2 });
-    env.app = await buildApp({ config: testConfig(overrides), db: env.db });
+    env.pay = new TestPaymentProvider("whsec_test", "http://app.test");
+    env.app = await buildApp({ config: testConfig(overrides), db: env.db, providers: new Map([["test", env.pay]]) });
   });
   afterAll(async () => {
     await env.app?.close();
@@ -120,4 +125,11 @@ export async function createTenant(env: TestEnv, platformAdmin: Session, name = 
   });
   if (res.status !== 201) throw new Error(`createTenant failed: ${res.status} ${JSON.stringify(res.body)}`);
   return { tenantId: res.body.tenant.id, admin };
+}
+
+/** Deliver a signed webhook from the test gateway. */
+export async function deliverWebhook(env: TestEnv, name: string, object: Record<string, unknown>, opts: { eventId?: string; timestamp?: number; secret?: string } = {}) {
+  const { body, headers } = env.pay.webhook(name, object, opts);
+  const res = await env.app.inject({ method: "POST", url: "/webhooks/payments/test", headers, payload: body });
+  return { status: res.statusCode, body: res.json() };
 }

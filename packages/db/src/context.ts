@@ -25,6 +25,17 @@ export const ANONYMOUS: DbContext = {
   schoolIds: [],
 };
 
+/**
+ * Server-side work with no user (webhooks, hold expiry, waitlist promotion),
+ * confined to one tenant. Never derived from a request's own claims.
+ */
+export function systemTenantContext(tenantId: string): DbContext {
+  return { userId: null, tenantId, platformAdmin: false, tenantWide: true, schoolIds: [] };
+}
+
+/** Platform-wide system context; used only to record raw webhook deliveries before their tenant is known. */
+export const SYSTEM_PLATFORM: DbContext = { userId: null, tenantId: null, platformAdmin: true, tenantWide: false, schoolIds: [] };
+
 export type Tx = Transaction<Database>;
 
 /** Run `fn` in a transaction whose RLS context is `ctx`. Settings are transaction-local. */

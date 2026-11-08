@@ -267,12 +267,57 @@ competition config is saved or published.
 - The pool, after question formats and filters, must cover `questionCount`.
 - It warns when items lack the competition's content locales.
 
+## Registration and payments (stage 4)
+
+See [payments.md](payments.md) for the money flow and the Airwallex go-live
+checklist.
+
+**Parents never get a tenant context.**
+- A parent registering with an organizer acts as themselves: RLS lets them
+  insert registrations for their own children, orders they buy, and lines
+  and payments on those orders.
+- What they need from the tenant comes through narrow `SECURITY DEFINER`
+  functions: prices, tax, seat counts, offer-code lookup and usage, and the
+  payment account.
+- Connecting the child to the tenant goes through
+  `app.connect_student_to_tenant`, which checks parenthood and a published
+  competition.
+- Audit entries may be written into the organizer's tenant only when they
+  are attributed to the caller.
+
+**System actor.** Webhooks, hold expiry and waitlist promotion run as
+`systemTenantContext(tenantId)`: no user, confined to one tenant, never
+derived from request input. Only the raw webhook record uses the
+platform-wide context, because its tenant is not known until the payment is
+looked up.
+
+**Concurrency.** Registration attempts for a competition are serialized with
+a transaction-level advisory lock, and offer-code use with a per-code lock.
+Seats count confirmed registrations plus unexpired holds. No provider call
+is made while a transaction is open.
+
+**Statuses.**
+- Registration: `pending_payment`, `confirmed`, `waitlisted`, `cancelled`.
+- Order: `pending`, `paid`, `failed`, `cancelled`, `refunded`,
+  `partially_refunded`.
+- Payment: `pending`, `succeeded`, `failed`, `cancelled`.
+- Refund: `pending`, `succeeded`, `failed`.
+
+These cover the requirement's payment states (Pending / Paid / Failed /
+Refunded / Cancelled) at the order level.
+
 ## Decisions to revisit
 
 - **Schools are tenant-scoped in the MVP.** A school taking part with two
   organizers has a school record in each. The same school-admin login can
   hold memberships in both. A platform-level school directory can be added
   later without breaking this.
+- **Private competitions are school/admin-only.** Parents register for
+  public or unlisted competitions. Unlisted plus "requires invite code" is
+  the invite-only option.
+- **Changing group with a different price is refused.** The admin cancels
+  and re-registers instead, refunding if needed. Charging or refunding the
+  price difference automatically can come later.
 - **Tenant-wide student visibility** comes from the `students.read`
   permission (Competition Admin). Judges and Head Judges get student access
   through review cases in stage 6, not tenant-wide lists.
