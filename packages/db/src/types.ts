@@ -165,6 +165,9 @@ export interface CompetitionsTable {
   results_publication: Generated<"on_approval" | "after_competition_ends" | "never">;
   leaderboard_privacy: Generated<"full_name" | "first_name_initial" | "nickname" | "anonymous_code" | "rank_score_only">;
   live_leaderboard: Generated<boolean>;
+  voice_retention_days: Generated<number>;
+  passport_comparisons: Generated<string[]>;
+  ai_feedback_enabled: Generated<boolean>;
 }
 
 export interface CompetitionVersionsTable {
@@ -220,6 +223,7 @@ export interface ContentBanksTable {
   base_locale: string;
   required_locales: string[];
   skill_framework_id: string | null;
+  practice_enabled: Generated<boolean>;
   status: Generated<"active" | "archived">;
   created_by: string | null;
   created_at: Timestamp;
@@ -748,6 +752,124 @@ export interface ResultReviewsTable {
   created_at: Timestamp;
 }
 
+export interface PracticeSetsTable {
+  id: string;
+  tenant_id: string;
+  student_id: string;
+  created_by_user_id: string;
+  content_version_id: string;
+  target_skill_ids: string[];
+  locale: string;
+  question_set: Json;
+  answers: Json;
+  grades: Json;
+  score: Json | null;
+  status: Generated<"open" | "submitted">;
+  created_at: Timestamp;
+  submitted_at: NullableTimestamp;
+}
+
+export interface RecordingsTable {
+  id: string;
+  tenant_id: string;
+  attempt_id: string | null;
+  practice_set_id: string | null;
+  item_id: string;
+  student_id: string;
+  storage_key: string;
+  mime_type: string;
+  bytes: number;
+  status: Generated<"stored" | "deleted">;
+  retain_until: NullableTimestamp;
+  created_at: Timestamp;
+  deleted_at: NullableTimestamp;
+  deleted_reason: string | null;
+}
+
+export interface AiJobsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  competition_id: string | null;
+  kind: "pronunciation" | "feedback";
+  dedupe_key: string;
+  payload: Json;
+  status: Generated<"pending" | "running" | "succeeded" | "failed">;
+  attempts: Generated<number>;
+  max_attempts: Generated<number>;
+  run_after: Timestamp;
+  locked_until: NullableTimestamp;
+  result: Json | null;
+  last_error: string | null;
+  provider: string | null;
+  model: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  finished_at: NullableTimestamp;
+}
+
+export interface AiUsageTable {
+  id: Generated<string>;
+  tenant_id: string;
+  competition_id: string | null;
+  job_id: string | null;
+  kind: string;
+  provider: string;
+  model: string | null;
+  units: Json;
+  cost_micros: ColumnType<string, number | string | undefined, number | string>;
+  created_at: Timestamp;
+}
+
+export interface PronunciationAssessmentsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  recording_id: string;
+  attempt_id: string | null;
+  practice_set_id: string | null;
+  competition_id: string | null;
+  round_id: string | null;
+  group_id: string | null;
+  item_id: string;
+  student_id: string;
+  speech_language: string;
+  provider: string;
+  model: string | null;
+  overall: ColumnType<string, number | string, number | string>;
+  aspects: Json;
+  units: Json;
+  suggested_fraction: ColumnType<string, number | string, number | string>;
+  created_at: Timestamp;
+}
+
+export interface AiFeedbackTable {
+  id: Generated<string>;
+  tenant_id: string;
+  attempt_id: string | null;
+  practice_set_id: string | null;
+  student_id: string;
+  locale: string;
+  source: "ai" | "fallback";
+  feedback: Json;
+  reasons: Json;
+  provider: string;
+  model: string | null;
+  created_at: Timestamp;
+}
+
+export interface SkillObservationsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  student_id: string;
+  skill_id: string;
+  attempt_id: string | null;
+  practice_set_id: string | null;
+  competition_id: string | null;
+  source: "official" | "practice";
+  correct: ColumnType<string, number | string, number | string>;
+  total: ColumnType<string, number | string, number | string>;
+  observed_at: ColumnType<Date, Date | string, Date | string>;
+}
+
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
@@ -797,6 +919,13 @@ export interface Database {
   result_versions: ResultVersionsTable;
   result_entries: ResultEntriesTable;
   result_reviews: ResultReviewsTable;
+  practice_sets: PracticeSetsTable;
+  recordings: RecordingsTable;
+  ai_jobs: AiJobsTable;
+  ai_usage: AiUsageTable;
+  pronunciation_assessments: PronunciationAssessmentsTable;
+  ai_feedback: AiFeedbackTable;
+  skill_observations: SkillObservationsTable;
 }
 
 export type Tenant = Selectable<TenantsTable>;
@@ -820,3 +949,5 @@ export type Attempt = Selectable<AttemptsTable>;
 export type AttemptSession = Selectable<AttemptSessionsTable>;
 export type ResultVersion = Selectable<ResultVersionsTable>;
 export type ResultEntryRow = Selectable<ResultEntriesTable>;
+export type PracticeSet = Selectable<PracticeSetsTable>;
+export type Recording = Selectable<RecordingsTable>;

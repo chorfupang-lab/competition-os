@@ -7,6 +7,13 @@ export interface Config {
   cookieSecure: boolean;
   rateLimit: { enabled: boolean; globalPerMinute: number; authPerMinute: number };
   logger: boolean;
+  ai: {
+    blobDir: string;
+    pronunciation: { provider: "mock" | "http"; url: string | null; token: string | null };
+    feedback: { provider: "template" | "anthropic"; model: string };
+    /** Estimated cost per minute of analysed audio, in millionths of a dollar. */
+    pronunciationMicrosPerMinute: number;
+  };
   payments: {
     /** Public URL of the web app (checkout return pages, receipt links). */
     appUrl: string;
@@ -29,6 +36,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     cookieSecure: (env.COOKIE_SECURE ?? (nodeEnv === "production" ? "true" : "false")) === "true",
     rateLimit: { enabled: true, globalPerMinute: 300, authPerMinute: 10 },
     logger: nodeEnv !== "test",
+    ai: {
+      blobDir: env.BLOB_DIR ?? "./.data/blobs",
+      pronunciation: env.PRONUNCIATION_URL
+        ? { provider: "http", url: env.PRONUNCIATION_URL, token: env.PRONUNCIATION_TOKEN ?? null }
+        : { provider: "mock", url: null, token: null },
+      // The Anthropic SDK reads its credentials from the environment (ANTHROPIC_API_KEY or a profile).
+      feedback: env.AI_FEEDBACK_PROVIDER === "anthropic"
+        ? { provider: "anthropic", model: env.AI_FEEDBACK_MODEL ?? "claude-opus-5-5" }
+        : { provider: "template", model: "" },
+      pronunciationMicrosPerMinute: Number(env.PRONUNCIATION_MICROS_PER_MINUTE ?? 6000),
+    },
     payments: {
       appUrl: env.APP_URL ?? "http://localhost:5173",
       testProvider:

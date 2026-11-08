@@ -8,8 +8,8 @@
 | 4 | **Registration and payment**: parent/school registration, pricing, offer codes, tax, Airwallex hosted checkout, webhooks, receipts, refunds, reconciliation | ✅ Done (Airwallex sandbox check pending) |
 | 5 | **Competition runtime**: server timer, autosave/resume, devices/sessions, anti-cheat signals | ✅ Done |
 | 6 | **Judging and results**: review cases, Head Judge approval/override, emergency actions, result versions, recalculation, publication | ✅ Done |
-| 7 | Learning Passport and AI: skills over time, pronunciation AI adapter, AI job queue, output validation, practice sets | Next |
-| 8 | Certificates and notifications | |
+| 7 | **Learning Passport and AI**: skills over time, pronunciation AI adapter, AI job queue, output validation, practice sets | ✅ Done (production model to be selected) |
+| 8 | Certificates and notifications | Next |
 | 9 | SaaS commercial layer: plans, limits, subscriptions, platform fees, AI cost | |
 | 10 | Privacy and internationalization: consent, export, deletion/anonymization, retention | |
 | 11 | Production: deployment, monitoring, backups/restore, security review | |
@@ -212,6 +212,38 @@ stages 2–4, once there are flows worth putting on screen.
 - Blind judging: judges see anonymous codes, organizers see names.
 - 229 tests in total.
 
+## Stage 7 — what is in place
+
+- Pronunciation recordings are saved with the answer at once (the attempt
+  continues) and analysed asynchronously by a swappable provider: a
+  deterministic mock, or an HTTP contract for any model. Output is
+  schema-validated.
+- A deterministic rubric turns measurements into a suggested grade. Judges
+  confirm suggestions per attempt or in bulk, and are recorded as the
+  graders. Practice uses suggestions directly.
+- Raw voice is deleted after analysis by default. Retaining it for 30 or 90
+  days requires a stated reason, and the worker deletes it when retention
+  ends.
+- AI job queue: leased, retried with exponential backoff, never blocking
+  participants. Failed jobs show in the usage report.
+- AI feedback: facts are pre-computed. Output is schema-checked, limited to
+  the provided skill and item ids, and safety-filtered (no diagnoses, advice,
+  links, contact details, official-outcome claims or chat invitations), with
+  a deterministic fallback in four locales. Rejections are audited. Official
+  attempts get feedback only once their results are visible.
+- Claude adapter: official SDK, JSON-schema output, low effort, server-side
+  refusal fallbacks, token-based cost tracking.
+- Learning Passport across organizers:
+  - recency-weighted skill mastery with trends, strengths and weak areas;
+  - result history with organizer-chosen comparisons, hidden below a cohort
+    of 10;
+  - pronunciation profile (latest, previous and group average) and
+    recommended practice.
+- Practice sets for weak skills from practice-enabled banks only, graded
+  immediately and kept separate from official data.
+- AI usage and estimated cost per tenant, competition, kind and model.
+- 245 tests in total.
+
 ## Known gaps carried forward
 
 - Email verification, password reset, invitations: stage 8 (notifications).
@@ -223,8 +255,14 @@ stages 2–4, once there are flows worth putting on screen.
   (stage 8: certificate engine).
 - Team rankings: the team scope exists in ranking but has no team
   membership yet (simple team module later, per the MVP scope).
-- Pronunciation recordings: upload, the AI queue and scoring are stage 7.
-  Until then, pronunciation items leave the attempt `pending_ai`.
+- **The production pronunciation model is not selected yet.** Evaluate
+  candidates (open models and vendors) per language for quality, licensing,
+  cost and latency, then implement the `http` contract or a dedicated
+  adapter.
+- Raw media live on local disk in development; S3-compatible storage comes
+  in stage 11.
+- AI quotas and over-quota behaviour come in stage 9 (usage is already
+  tracked).
 - Claiming an existing student (a parent linking to a school-created
   identity) needs a verified pending-link workflow; scheduled for stage 10
   with data governance.

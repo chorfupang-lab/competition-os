@@ -18,7 +18,23 @@ import { adminRuntimeRoutes } from "./routes/runtime-admin.ts";
 import { meRuntimeRoutes } from "./routes/runtime-me.ts";
 import { emergencyRoutes } from "./routes/emergency.ts";
 import { judgingRoutes } from "./routes/judging.ts";
+import { aiAdminRoutes } from "./routes/ai-admin.ts";
+import { passportRoutes } from "./routes/passport.ts";
 import { createProviders, type PaymentProviders } from "./payments/index.ts";
+import { LocalBlobStore } from "./ai/blob-store.ts";
+import { ClaudeFeedbackProvider, HttpPronunciationProvider, MockPronunciationProvider, TemplateFeedbackProvider } from "./ai/providers.ts";
+import type { AiDeps } from "./lib/ai-jobs.ts";
+
+export function createAiDeps(config: Config): AiDeps {
+  const p = config.ai;
+  return {
+    blobs: new LocalBlobStore(p.blobDir),
+    pronunciation: p.pronunciation.provider === "http" && p.pronunciation.url ? new HttpPronunciationProvider(p.pronunciation.url, p.pronunciation.token) : new MockPronunciationProvider(),
+    // Claude Opus 5.5 list price: $4 / $20 per million tokens = 4 / 20 micro-dollars per token.
+    feedback: p.feedback.provider === "anthropic" ? new ClaudeFeedbackProvider(p.feedback.model, { inputPerMTok: 4, outputPerMTok: 20 }) : new TemplateFeedbackProvider(),
+    pronunciationMicrosPerMinute: p.pronunciationMicrosPerMinute,
+  };
+}
 import { meRoutes } from "./routes/me.ts";
 import { platformRoutes } from "./routes/platform.ts";
 import { tenantRoutes } from "./routes/tenant.ts";
@@ -27,6 +43,7 @@ export interface AppDeps {
   config: Config;
   db: DB;
   providers: PaymentProviders;
+  ai: AiDeps;
 }
 
 declare module "fastify" {
@@ -40,8 +57,8 @@ declare module "fastify" {
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
-export async function buildApp(input: Omit<AppDeps, "providers"> & { providers?: PaymentProviders }): Promise<FastifyInstance> {
-  const deps: AppDeps = { ...input, providers: input.providers ?? createProviders(input.config) };
+export async function buildApp(input: Omit<AppDeps, "providers" | "ai"> & { providers?: PaymentProviders; ai?: AiDeps }): Promise<FastifyInstance> {
+  const deps: AppDeps = { ...input, providers: input.providers ?? createProviders(input.config), ai: input.ai ?? createAiDeps(input.config) };
   const app = Fastify({
     logger: deps.config.logger
       ? { redact: ["req.headers.authorization", "req.headers.cookie", 'res.headers["set-cookie"]'] }
@@ -118,6 +135,8 @@ export async function buildApp(input: Omit<AppDeps, "providers"> & { providers?:
   await app.register(meRuntimeRoutes, { prefix: "/me" });
   await app.register(adminRuntimeRoutes, { prefix: "/t/:tenantId" });
   await app.register(judgingRoutes, { prefix: "/t/:tenantId" });
+  await app.register(aiAdminRoutes, { prefix: "/t/:tenantId" });
+  await app.register(passportRoutes, { prefix: "/me" });
   await app.register(emergencyRoutes, { prefix: "/t/:tenantId/competitions/:competitionId/emergency" });
   await app.register(webhookRoutes, { prefix: "/webhooks" });
   await app.register(catalogRoutes, { prefix: "/competitions" });

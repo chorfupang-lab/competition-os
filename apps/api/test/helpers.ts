@@ -7,6 +7,28 @@ import { buildApp } from "../src/app.ts";
 import type { Config } from "../src/config.ts";
 import { hashPassword } from "../src/lib/crypto.ts";
 import { TestPaymentProvider } from "../src/payments/index.ts";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { LocalBlobStore } from "../src/ai/blob-store.ts";
+import { MockPronunciationProvider, type FeedbackGeneration, type FeedbackProvider } from "../src/ai/providers.ts";
+import type { AiDeps } from "../src/lib/ai-jobs.ts";
+
+/** A scriptable stand-in for an LLM: returns whatever raw output the test sets. */
+export class FakeFeedbackProvider implements FeedbackProvider {
+  readonly name = "fake-llm";
+  next: unknown = null;
+  failNext = 0;
+  calls: unknown[] = [];
+  async generate(facts: unknown): Promise<FeedbackGeneration> {
+    this.calls.push(facts);
+    if (this.failNext > 0) {
+      this.failNext--;
+      throw new Error("llm unavailable");
+    }
+    return { raw: this.next, provider: this.name, model: "fake-1", inputTokens: 500, outputTokens: 120, costMicros: 4400 };
+  }
+}
 
 export const ORIGIN = "http://app.test";
 export const PASSWORD = "correct-horse-battery";
@@ -22,6 +44,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     rateLimit: { enabled: false, globalPerMinute: 1000, authPerMinute: 1000 },
     logger: false,
     payments: { appUrl: "http://app.test", testProvider: { webhookSecret: "whsec_test" }, airwallex: null },
+    ai: { blobDir: "", pronunciation: { provider: "mock", url: null, token: null }, feedback: { provider: "template", model: "" }, pronunciationMicrosPerMinute: 6000 },
     ...overrides,
   };
 }
@@ -33,6 +56,8 @@ export interface TestEnv {
   owner: pg.Pool;
   /** The test payment gateway (Airwallex-compatible webhooks). */
   pay: TestPaymentProvider;
+  ai: AiDeps & { pronunciation: MockPronunciationProvider; feedback: FakeFeedbackProvider };
+  blobDir: string;
 }
 
 /** One app per test file, with its own pools; closed after the file. */
@@ -42,7 +67,9 @@ export function useTestEnv(overrides: Partial<Config> = {}): TestEnv {
     env.db = createDb(inject("appUrl"), { max: 5 });
     env.owner = new pg.Pool({ connectionString: inject("ownerUrl"), max: 2 });
     env.pay = new TestPaymentProvider("whsec_test", "http://app.test");
-    env.app = await buildApp({ config: testConfig(overrides), db: env.db, providers: new Map([["test", env.pay]]) });
+    env.blobDir = mkdtempSync(join(tmpdir(), "cos-blobs-"));
+    env.ai = { blobs: new LocalBlobStore(env.blobDir), pronunciation: new MockPronunciationProvider(), feedback: new FakeFeedbackProvider(), pronunciationMicrosPerMinute: 6000 };
+    env.app = await buildApp({ config: testConfig(overrides), db: env.db, providers: new Map([["test", env.pay]]), ai: env.ai });
   });
   afterAll(async () => {
     await env.app?.close();

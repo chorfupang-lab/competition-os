@@ -138,6 +138,7 @@ export function presentBank(b: ContentBank) {
     baseLocale: b.base_locale,
     requiredLocales: b.required_locales,
     skillFrameworkId: b.skill_framework_id,
+    practiceEnabled: b.practice_enabled,
     status: b.status,
     createdAt: b.created_at,
   };

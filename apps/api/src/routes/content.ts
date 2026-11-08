@@ -54,6 +54,8 @@ const BankBody = z.object({
   baseLocale: zLocale,
   requiredLocales: z.array(zLocale).max(4).optional(),
   skillFrameworkId: zUuid.nullable().optional(),
+  /** Allow this bank's published questions in student practice sets (never for banks used in upcoming competitions). */
+  practiceEnabled: z.boolean().optional(),
 });
 const BankPatch = BankBody.omit({ key: true, baseLocale: true }).partial().extend({ status: z.enum(["active", "archived"]).optional() });
 const ObjectiveBody = z.object({ key: zSkillKey, title: z.string().trim().min(1).max(500), titleI18n: zI18n.optional(), skillIds: z.array(zUuid).max(20).optional() });
@@ -207,6 +209,7 @@ export async function contentRoutes(app: FastifyInstance): Promise<void> {
           base_locale: body.baseLocale,
           required_locales: [...new Set(body.requiredLocales ?? [])].filter((l) => l !== body.baseLocale),
           skill_framework_id: body.skillFrameworkId ?? null,
+          ...(body.practiceEnabled !== undefined && { practice_enabled: body.practiceEnabled }),
           created_by: s.auth.userId,
         })
         .returningAll()
@@ -259,6 +262,7 @@ export async function contentRoutes(app: FastifyInstance): Promise<void> {
         ...(body.requiredLocales !== undefined && { required_locales: [...new Set(body.requiredLocales)].filter((l) => l !== before.base_locale) }),
         ...(body.skillFrameworkId !== undefined && { skill_framework_id: body.skillFrameworkId }),
         ...(body.status !== undefined && { status: body.status }),
+        ...(body.practiceEnabled !== undefined && { practice_enabled: body.practiceEnabled }),
       };
       if (Object.keys(changes).length === 0) return before;
       const after = await tx.updateTable("content_banks").set(changes).where("id", "=", bankId).returningAll().executeTakeFirstOrThrow();

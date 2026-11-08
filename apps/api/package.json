@@ -11,6 +11,7 @@
     "worker": "tsx src/worker.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
     "@cos/core": "workspace:*",
     "@cos/db": "workspace:*",
     "@fastify/cookie": "^11.0.2",

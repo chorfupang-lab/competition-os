@@ -486,16 +486,21 @@ export async function gradeAndScore(tx: Tx, attempt: Attempt, rg: RoundGroupConf
   const adjustments = new Map((await loadAdjustments(tx, attempt.round_id, attempt.group_id)).map((a) => [a.item_id, a.kind]));
   const graded: GradedItem[] = [];
   const facts: AnswerFact[] = [];
+  const perItem: Array<{ itemId: string; fraction: number; skillIds: string[] }> = [];
   let pendingAi = false;
   let pendingManual = false;
   for (const ref of refs) {
     const item = pool.get(ref.itemId)!.snapshot.item;
     const answer = answers.get(ref.itemId);
-    const stored = answer?.grade as (GradeOutcome & { manual?: boolean }) | null | undefined;
+    const stored = answer?.grade as (GradeOutcome & { manual?: boolean; ai?: { suggestedFraction: number } }) | null | undefined;
     let grade: GradeOutcome;
     if (!answer || answer.response === null) grade = { outcome: "unanswered", fraction: 0 };
     else if (stored?.manual) grade = stored;
-    else grade = gradeResponse(item, answer.response as ItemResponse);
+    else if (stored?.ai) {
+      // AI measured it. Practice uses the suggestion; official attempts wait for a judge to confirm it.
+      const f = stored.ai.suggestedFraction;
+      grade = attempt.kind === "practice" ? { outcome: f >= 1 ? "correct" : f <= 0 ? "incorrect" : "partial", fraction: f } : { outcome: "pending_manual", fraction: null };
+    } else grade = gradeResponse(item, answer.response as ItemResponse);
     const adj = adjustments.get(ref.itemId);
     const scored: "full_credit" | "disabled" | undefined = adj === "full_credit" ? "full_credit" : adj === "disabled" || adj === "replaced" ? "disabled" : undefined;
     if (!scored) {
@@ -506,7 +511,8 @@ export async function gradeAndScore(tx: Tx, attempt: Attempt, rg: RoundGroupConf
       ? { itemId: ref.itemId, maxPoints: item.points, difficulty: item.difficulty, outcome: "unanswered" as const, adjustment: scored }
       : toGradedItem({ itemId: ref.itemId, points: item.points, difficulty: item.difficulty }, grade, answer?.time_spent_ms);
     if (g) graded.push(g);
-    if (answer && writeGrades && !stored?.manual) {
+    if (grade.fraction !== null && !scored) perItem.push({ itemId: ref.itemId, fraction: grade.fraction, skillIds: item.skillIds });
+    if (answer && writeGrades && !stored?.manual && !stored?.ai) {
       await tx.updateTable("attempt_answers").set({ grade: JSON.stringify(grade) }).where("attempt_id", "=", attempt.id).where("item_id", "=", ref.itemId).execute();
     }
     if (answer) {
@@ -522,7 +528,31 @@ export async function gradeAndScore(tx: Tx, attempt: Attempt, rg: RoundGroupConf
   }
   const { items: _items, ...summary } = scoreAttempt(graded, rg.scoring);
   void _items;
+  await recordSkillObservations(tx, attempt, perItem);
   return { summary, facts, pendingAi, pendingManual };
+}
+
+/**
+ * Learning Passport evidence: per skill, the share of this attempt's graded
+ * questions answered correctly. Re-scoring replaces the attempt's rows.
+ */
+export async function recordSkillObservations(tx: Tx, attempt: Pick<Attempt, "id" | "tenant_id" | "student_id" | "competition_id" | "kind" | "submitted_at" | "started_at">, perItem: Array<{ fraction: number; skillIds: string[] }>) {
+  const bySkill = new Map<string, { correct: number; total: number }>();
+  for (const p of perItem) {
+    for (const skillId of p.skillIds) {
+      const s = bySkill.get(skillId) ?? { correct: 0, total: 0 };
+      s.correct += p.fraction;
+      s.total += 1;
+      bySkill.set(skillId, s);
+    }
+  }
+  const at = attempt.submitted_at ?? attempt.started_at;
+  for (const [skillId, v] of bySkill) {
+    await sql`
+      insert into skill_observations (tenant_id, student_id, skill_id, attempt_id, competition_id, source, correct, total, observed_at)
+      values (${attempt.tenant_id}, ${attempt.student_id}, ${skillId}, ${attempt.id}, ${attempt.competition_id}, ${attempt.kind === "practice" ? "practice" : "official"}, ${v.correct}, ${v.total}, ${at})
+      on conflict (coalesce(attempt_id, practice_set_id), skill_id) do update set correct = excluded.correct, total = excluded.total, observed_at = excluded.observed_at`.execute(tx);
+  }
 }
 
 /** Re-score a submitted attempt (question fix, manual grade); the previous score is kept in history. */

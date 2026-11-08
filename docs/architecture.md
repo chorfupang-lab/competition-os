@@ -351,6 +351,26 @@ See [results.md](results.md).
 - **Head Judge-only permissions** (`HEAD_JUDGE_ONLY`): `review.approve`,
   `result.override`, `integrity.disqualify`, `emergency.override`.
 
+## Learning Passport and AI (stage 7)
+
+See [ai.md](ai.md).
+
+- **AI measures, people decide.** Pronunciation assessments produce
+  `suggestedFraction`. For official attempts the item stays `pending_manual`
+  until a judge confirms (HR15, HR18), so a rubric applied to AI output is
+  never an unreviewed official score.
+- **Feedback is generated from facts, not from the attempt.** The model
+  sees only pre-computed score data, framework skill names and approved
+  practice item ids. Validation rejects any id it wasn't given. The
+  deterministic template is both the no-LLM default and the safety net.
+- **Passport data is per tenant but readable by the family across tenants.**
+  RLS on `skill_observations`, `pronunciation_assessments`, `ai_feedback`
+  and `practice_sets` allows the student or parent. Cohort statistics come
+  only through aggregating `SECURITY DEFINER` functions, and are hidden
+  below 10 participants.
+- **Practice never sees competition banks** unless an organizer explicitly
+  enables practice on that bank.
+
 ## Decisions to revisit
 
 - **Schools are tenant-scoped in the MVP.** A school taking part with two
@@ -360,6 +380,9 @@ See [results.md](results.md).
 - **Partial manual grades follow the round's scoring rule.** With
   `partialCredit: "none"`, a 0.5 grade earns no points. Organizers should
   enable proportional credit for rounds with manually graded items.
+- **Pronunciation rubric thresholds** (85 = full, 40 = zero) are platform
+  defaults. They can become per-item or per-round settings once a production
+  model is chosen and calibrated against judges' scores.
 - **Judges review blind** unless also given tenant-wide student access.
 - **Fullscreen "pause" keeps the timer running.** Pausing hides the
   questions until fullscreen returns, so leaving fullscreen never buys

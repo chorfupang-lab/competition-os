@@ -10,7 +10,7 @@ payments, judging, certificates and student Learning Passports.
 
 ## Status
 
-**Stages 1–6 of 11 are complete.**
+**Stages 1–7 of 11 are complete.**
 - Stage 1, product foundation: database, login, tenants, roles and
   permissions, tenant isolation, schools and rosters, parents and children,
   and the audit log.
@@ -38,6 +38,12 @@ payments, judging, certificates and student Learning Passports.
   approval → published, with before/after diffs and overrides), qualification
   gating the next round, and privacy-aware leaderboards. See
   [docs/results.md](docs/results.md).
+- Stage 7, Learning Passport and AI: pronunciation recordings analysed by a
+  swappable AI provider (judges confirm suggested grades; raw voice deleted
+  by default), an AI job queue with retries, validated and safety-filtered AI
+  feedback with a deterministic fallback, per-skill mastery across
+  organizers, privacy-safe comparisons, practice sets from practice-enabled
+  banks, and AI usage and cost tracking. See [docs/ai.md](docs/ai.md).
 
 This is a backend API only; the web portals come later. See the roadmap for
 what each stage adds.
@@ -67,7 +73,7 @@ cp .env.example .env                 # then load it: set -a; source .env; set +a
 pnpm db:migrate
 pnpm db:create-platform-admin --email you@example.com --name "Your Name"
 pnpm dev                             # API on http://localhost:3000
-pnpm worker                          # background worker (auto-submit, seat-hold sweep)
+pnpm worker                          # background worker (auto-submit, seat holds, AI jobs, voice retention)
 ```
 
 The admin script prints a generated password once if you don't pass `--password`.
@@ -155,3 +161,10 @@ that change data, the `Origin` must be in `ALLOWED_ORIGINS`.
 | `PATCH .../competitions/:id/results-settings` | Competition Admin | Publication mode, leaderboard privacy, live board |
 | `GET /competitions/:id/leaderboard?roundId&groupId` | anyone | Public leaderboard (official or provisional) |
 | `GET /me/results` | parent / student | Own published results |
+| `PUT /me/attempts/:id/recordings/:itemId` (audio body; `x-session-id`, `x-client-seq`) | student / parent | Pronunciation answer; analysed asynchronously |
+| `GET /me/passport/:studentId` | student / parent | Learning Passport |
+| `POST /me/practice-sets`, `GET .../:id`, `PUT .../:id/recordings/:itemId`, `POST .../:id/submit` | student / parent | Practice from weak skills |
+| `GET /me/attempts/:id/feedback`, `GET /me/practice-sets/:id/feedback` | student / parent | AI feedback (202 while pending) |
+| `POST /t/:tenantId/attempts/:id/grades/accept-ai`, `POST .../competitions/:id/ai-suggestions/accept` | Judge | Confirm AI-suggested grades |
+| `PATCH .../competitions/:id/ai-settings` | Competition Admin | Voice retention (reason required), Passport comparisons, AI feedback |
+| `GET /t/:tenantId/ai/usage` | `analytics.read` | AI usage, estimated cost, job health |

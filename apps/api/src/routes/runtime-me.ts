@@ -1,8 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { sql } from "kysely";
 import { AppError, CLIENT_EVENT_TYPES, CompetitionConfigSchema, remainingAttempts } from "@cos/core";
-import { resultsVisibleNow } from "./catalog.ts";
+import { familyResults } from "./passport.ts";
 import { ANONYMOUS, withContext, type Attempt, type DbContext } from "@cos/db";
 import { requireAuth, type AuthInfo } from "../lib/auth.ts";
 import {
@@ -231,29 +230,13 @@ export async function meRuntimeRoutes(app: FastifyInstance): Promise<void> {
   app.get("/results", async (request) => {
     const auth = requireAuth(request);
     const { studentId } = parse(z.object({ studentId: zUuid.optional() }), request.query);
-    return withContext(db, personal(auth), async (tx) => {
-      let q = tx.selectFrom("result_entries").selectAll();
-      if (studentId) q = q.where("student_id", "=", studentId);
-      const entries = await q.execute();
-      const out = [];
-      for (const e of entries) {
-        const { rows } = await sql<{ round_id: string; group_id: string; competition_id: string; status: string; version_number: number; published_at: Date }>`select * from app.result_version_public(${e.result_version_id})`.execute(tx);
-        const v = rows[0];
-        if (!v || v.status !== "published") continue;
-        const comp = await tx
-          .selectFrom("competitions as c")
-          .innerJoin("competition_versions as cv", "cv.id", "c.current_version_id")
-          .select(["c.name", "c.results_publication", "cv.config"])
-          .where("c.id", "=", v.competition_id)
-          .executeTakeFirst();
-        if (!comp || !resultsVisibleNow(comp.results_publication, CompetitionConfigSchema.parse(comp.config))) continue;
-        out.push({
-          competitionId: v.competition_id, competitionName: comp.name, roundId: v.round_id, groupId: v.group_id, versionNumber: v.version_number, publishedAt: v.published_at,
-          studentId: e.student_id, status: e.status, totalScore: e.total_score === null ? null : Number(e.total_score), rank: e.rank, tied: (e.tied_with ?? 1) > 1, qualified: e.qualified,
-          scopeRanks: e.scope_ranks,
-        });
-      }
-      return { results: out };
-    });
+    return withContext(db, personal(auth), async (tx) => ({
+      results: (await familyResults(tx, studentId ?? null)).map((r) => ({
+        competitionId: r.version.competition_id, competitionName: r.competition.name, roundId: r.version.round_id, groupId: r.version.group_id,
+        versionNumber: r.version.version_number, publishedAt: r.version.published_at, studentId: r.entry.student_id, status: r.entry.status,
+        totalScore: r.entry.total_score === null ? null : Number(r.entry.total_score), rank: r.entry.rank, tied: (r.entry.tied_with ?? 1) > 1,
+        qualified: r.entry.qualified, scopeRanks: r.entry.scope_ranks,
+      })),
+    }));
   });
 }

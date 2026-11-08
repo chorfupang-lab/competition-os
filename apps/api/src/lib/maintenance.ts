@@ -1,12 +1,14 @@
 import { sql } from "kysely";
 import { OFFLINE_SYNC_GRACE_MS } from "@cos/core";
 import { SYSTEM_PLATFORM, systemTenantContext, withContext, type Attempt, type DB } from "@cos/db";
+import { runAiJobs, sweepRecordings, type AiDeps } from "./ai-jobs.ts";
 import { releaseAndPromote } from "./registration.ts";
 import { closeIfExpired } from "./runtime.ts";
 
 export interface MaintenanceReport {
   attemptsSubmitted: number;
   competitionsSwept: number;
+  ai?: { succeeded: number; retried: number; failed: number; recordingsDeleted: number };
 }
 
 /**
@@ -15,7 +17,7 @@ export interface MaintenanceReport {
  *   - submit attempts whose time ran out (participant gone or offline)
  *   - release lapsed seat holds and promote waitlists
  */
-export async function runMaintenance(db: DB, now = new Date()): Promise<MaintenanceReport> {
+export async function runMaintenance(db: DB, now = new Date(), ai?: AiDeps): Promise<MaintenanceReport> {
   const due = await withContext(db, SYSTEM_PLATFORM, async (tx) => {
     const { rows } = await sql<{ id: string; tenant_id: string }>`select * from app.due_attempts(${Math.ceil(OFFLINE_SYNC_GRACE_MS / 1000)}, 500)`.execute(tx);
     return rows;
@@ -35,5 +37,8 @@ export async function runMaintenance(db: DB, now = new Date()): Promise<Maintena
     return rows;
   });
   for (const h of holds) await releaseAndPromote(db, null, h.competition_id, h.tenant_id, now);
-  return { attemptsSubmitted, competitionsSwept: holds.length };
+  if (!ai) return { attemptsSubmitted, competitionsSwept: holds.length };
+  const jobs = await runAiJobs(db, ai);
+  const recordingsDeleted = await sweepRecordings(db, ai.blobs);
+  return { attemptsSubmitted, competitionsSwept: holds.length, ai: { ...jobs, recordingsDeleted } };
 }
